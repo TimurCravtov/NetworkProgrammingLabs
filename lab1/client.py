@@ -78,7 +78,6 @@ def main():
         bool(int(args.get("https", 0)))
     )
 
-    print(https)
     client = HttpClient(host, port, https=https)
 
     body_bytes, content_type = client.request(filename, "GET")

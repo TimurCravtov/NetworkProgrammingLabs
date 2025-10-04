@@ -40,8 +40,9 @@ _Available configurations:_ `host`, `port`, `dir` (served directory). Default: `
 _Available configurations:_ `host`, `port`, `fname`, `dpath` (download path), `https` (0 or 1 to make the client run via `https`). Default: `localhost`, `8080`, ` `, `down/`, `0`
 
 - Added possibility to provide the methods of request (`GET`, `POST` and others)
-- HTML files are printed by default, and image and pdf files are saved in directory passed in system args
+- HTML files are printed by default, and image and pdf files are saved in directory passed via `--dpath`
 - Made sure client has read the whole message using `Content-length` header.
+- Can make request through the internet by setting `--https 1`
 
 ### Screenshots
 
