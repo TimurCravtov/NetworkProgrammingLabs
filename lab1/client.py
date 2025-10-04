@@ -26,7 +26,7 @@ class HttpClient:
             self.client_socket = sock
 
 
-    def request(self, url: str, method: str = "GET", body="", headers=None):
+    def request(self, url: str, method: str = "GET", body=b"", headers=None):
         if headers is None:
             headers = {}
 
@@ -37,7 +37,7 @@ class HttpClient:
             raise ValueError("method must be GET, POST, PUT, or DELETE")
 
         # Build the request
-        request = build_http_request(method, url, body, headers)
+        request = build_http_request(method=method, path=url, body=body, headers=headers, host=self.host)
 
         self.client_socket.send(request)
 
@@ -73,7 +73,7 @@ def main():
     host, port, filename, download_path, https = (
         args.get("host", "localhost"),
         int(args.get("port", 8080)),
-        quote(args.get("fname", "")),
+        quote(args.get("fname", "/")),
         args.get("dpath", "."),
         args.get("https", False)
     )
