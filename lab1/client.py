@@ -75,9 +75,10 @@ def main():
         int(args.get("port", 8080)),
         quote(args.get("fname", "/")),
         args.get("dpath", "."),
-        args.get("https", False)
+        bool(int(args.get("https", 0)))
     )
 
+    print(https)
     client = HttpClient(host, port, https=https)
 
     body_bytes, content_type = client.request(filename, "GET")
