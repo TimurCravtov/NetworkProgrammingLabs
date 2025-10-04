@@ -1,0 +1,11 @@
+client.py
+.venv/
+__pycache__/
+*.pyc
+.idea/
+README.md
+#report_screenshots/ # or perhaps i may leave them here
+Dockerfile
+docker-compose.yml
+served/
+.dockerignore

@@ -1,0 +1,229 @@
+# -------------------------
+# OS / Editor junk files
+# -------------------------
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Icon?
+desktop.ini
+*.swp
+*.swo
+*.tmp
+*.bak
+*.orig
+*.lock
+*.log
+*.pid
+
+# -------------------------
+# Node.js / JavaScript
+# -------------------------
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+package-lock.json
+yarn.lock
+.pnpm-debug.log
+.next/
+.nuxt/
+dist/
+build/
+coverage/
+.vite/
+vite.config.ts.timestamp-*
+
+# -------------------------
+# Python
+# -------------------------
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.pyc
+*.egg
+*.egg-info/
+.eggs/
+*.manifest
+*.spec
+.Python
+.env
+.venv/
+env/
+venv/
+ENV/
+pip-log.txt
+pip-delete-this-directory.txt
+.pytest_cache/
+.mypy_cache/
+.tox/
+.coverage
+.coverage.*
+htmlcov/
+.pyre/
+.dmypy.json
+.pytype/
+.ipynb_checkpoints
+*.ipynb_checkpoints
+
+# -------------------------
+# Java / JVM
+# -------------------------
+*.class
+*.jar
+*.war
+*.ear
+*.iml
+*.iws
+*.ipr
+*.idea/
+target/
+out/
+*.log
+hs_err_pid*
+replay_pid*
+
+# -------------------------
+# C / C++ / CMake
+# -------------------------
+*.out
+*.obj
+*.o
+*.so
+*.a
+*.lo
+*.la
+*.dll
+*.dylib
+*.exe
+*.idb
+*.pdb
+*.mod
+*.smod
+*.cmake
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+compile_commands.json
+
+# -------------------------
+# Go
+# -------------------------
+*.exe
+*.test
+*.out
+bin/
+vendor/
+
+# -------------------------
+# Rust
+# -------------------------
+target/
+Cargo.lock
+
+# -------------------------
+# PHP / Composer
+# -------------------------
+vendor/
+composer.lock
+
+# -------------------------
+# Dotnet / C#
+# -------------------------
+bin/
+obj/
+*.user
+*.suo
+*.pdb
+*.cache
+*.csproj.user
+*.dbmdl
+*.jfm
+*.vsp
+*.vspscc
+*.vssscc
+.vscode/
+.vs/
+
+# -------------------------
+# Databases
+# -------------------------
+*.sqlite
+*.sqlite3
+*.db
+*.db-journal
+*.sql
+*.dump
+
+# -------------------------
+# Docker
+# -------------------------
+*.pid
+*.seed
+*.pid.lock
+*.pidfile
+docker-compose.override.yml
+
+# -------------------------
+# Logs & misc
+# -------------------------
+*.log
+*.gz
+*.tgz
+*.tar
+*.zip
+*.7z
+*.rar
+*.bak
+*.tmp
+*.swp
+
+# -------------------------
+# IDE / Editors
+# -------------------------
+# VSCode
+.vscode/
+.history/
+# JetBrains
+.idea/
+*.iml
+# Eclipse
+.project
+.classpath
+.csettings
+.settings/
+.metadata/
+bin/
+# Rider / IntelliJ
+*.ipr
+*.iws
+# Sublime
+*.sublime-workspace
+*.sublime-project
+
+# -------------------------
+# Environment / Secrets
+# -------------------------
+.env
+.env.*
+*.key
+*.pem
+*.crt
+*.cert
+*.pub
+.secret
+secrets/
+config/secrets.yml
+
+# -------------------------
+# Misc
+# -------------------------
+tmp/
+temp/
+.cache/
+.eslintcache
+.prettier-cache
+bower_components/
+jspm_packages/
