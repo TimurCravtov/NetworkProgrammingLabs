@@ -5,7 +5,7 @@ import os
 from urllib.parse import urlparse, unquote, quote
 
 from FileHelper import parse_args
-from HttpHelper import build_http_request
+from HttpHelper import build_http_request, receive_from_http_socket
 
 
 class HttpClient:
@@ -25,7 +25,6 @@ class HttpClient:
         else:
             self.client_socket = sock
 
-
     def request(self, url: str, method: str = "GET", body=b"", headers=None):
         if headers is None:
             headers = {}
@@ -36,34 +35,21 @@ class HttpClient:
         if method not in ("GET", "POST", "PUT", "DELETE"):
             raise ValueError("method must be GET, POST, PUT, or DELETE")
 
-        # Build the request
-        request = build_http_request(method=method, path=url, body=body, headers=headers, host=self.host)
+        # Build and send the HTTP request
+        request = build_http_request(
+            method=method,
+            path=url,
+            body=body,
+            headers=headers,
+            host=self.host
+        )
+        self.client_socket.sendall(request)
 
-        self.client_socket.send(request)
-
-        # Receive the response
-        data = b""
-        while True:
-            response = self.client_socket.recv(4096)
-            if not response:
-                break
-            data += response
+        _, _, version, response_headers, response_body = receive_from_http_socket(self.client_socket, "response")
 
         self.client_socket.close()
 
-        # Split headers and body safely
-        header_bytes, _, body_bytes = data.partition(b"\r\n\r\n")
-        header_text = header_bytes.decode(errors="ignore")
-        headers_lines = header_text.split("\r\n")[1:]
-        headers_dict = {}
-        for line in headers_lines:
-            if ": " in line:
-                key, value = line.split(": ", 1)
-                headers_dict[key.lower()] = value
-
-        content_type = headers_dict.get("content-type", None)
-        return body_bytes, content_type
-
+        return response_headers, response_body
 
 
 def main():
@@ -80,7 +66,8 @@ def main():
 
     client = HttpClient(host, port, https=https)
 
-    body_bytes, content_type = client.request(filename, "GET")
+    headers, body_bytes = client.request(filename, "GET")
+    content_type = headers.get("content-type")
 
     print("Content-Type:", content_type)
 

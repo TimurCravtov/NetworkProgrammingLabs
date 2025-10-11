@@ -14,19 +14,25 @@ class HtmlServer:
     page404 = build_http_response(404, b"<h1>404 Not Found</h1>")
     page_method_not_allowed = build_http_response(405, b"<h1>Method Not Allowed<h1>")
 
-    def __init__(self, host="0.0.0.0", port=8080, served_directory=None, allowed_extensions=[".html", ".htm", ".pdf", ".png"]):
+    def __init__(self, host="0.0.0.0", port=8080, served_directory=None, allowed_extensions=(".html", ".htm", ".pdf", ".png")):
         self.host = host
         self.port = port
         self.allowed_extensions = allowed_extensions
         self.served_directory = os.path.abspath(served_directory or os.getcwd())
+
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+
         print("Serving directory:", self.served_directory)
 
     def generate_file_listing_html(self, rel_path=""):
         abs_path = os.path.join(self.served_directory, rel_path)
         html = "<html><body>"
         html += f"<h2>Index of /{rel_path}</h2><ul>"
+
+        if rel_path.strip("/"):
+            parent_rel = os.path.dirname(rel_path.rstrip("/"))
+            html += f'<li><a href="/{parent_rel}">../</a></li>'
 
         for entry in sorted(os.listdir(abs_path)):
             entry_path = os.path.join(abs_path, entry)
@@ -60,48 +66,14 @@ class HtmlServer:
         self.sock.listen(5)
         print(f"Server running on http://{self.host}:{self.port}")
 
-        def receive_from_socket(con: socket.socket):
-            data = b""
-            while b"\r\n\r\n" not in data:
-                chunk = con.recv(4096)
-                if not chunk:
-                    return None
-                data += chunk
-
-            header_part, rest = data.split(b"\r\n\r\n", 1)
-            header_lines = header_part.decode(errors="replace").split("\r\n")
-
-            request_line = header_lines[0]
-            method, path, version = request_line.split(" ")
-
-            # Parse headers
-            headers = {}
-            for line in header_lines[1:]:
-                if ": " in line:
-                    k, v = line.split(": ", 1)
-                    headers[k.strip().lower()] = v.strip()
-
-            # Read body (if Content-Length present)
-            body = rest
-            if "content-length" in headers:
-                content_length = int(headers["content-length"])
-                while len(body) < content_length:
-                    chunk = con.recv(4096)
-                    if not chunk:
-                        break
-                    body += chunk
-                body = body[:content_length]  # trim just in case
-            else:
-                body = b""
-
-            return method, path, version, headers, body
-
         while True:
             conn, addr = self.sock.accept()
             print("Connected by", addr)
 
             try:
-                result = receive_from_socket(conn)
+
+                result = receive_from_http_socket(conn, type="request")
+
                 if not result:
                     conn.close()
                     continue
@@ -146,3 +118,4 @@ class HtmlServer:
             except Exception as e:
                 print("Error handling request:", e)
                 conn.close()
+

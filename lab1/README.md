@@ -46,11 +46,25 @@ _Available configurations:_ `host`, `port`, `fname`, `dpath` (download path), `h
 
 ### Screenshots
 
-Running `docker compose up`:
+[Dockerfile](Dockerfile) - based on python images, copies all the files from the root to `/app`, and runs `python server.py`. _Info_: not all the files are necessary, but they are removed using `.dockerignore`
+
+<img src="report_screenshots/dockerfile.png">
+
+[Docker Compose file](docker-compose.yml) - defines a single service called `file-service` which builds the current `Dockerfile`, adds a bind volume root (`./`) in `/app`, overrides the `command` and connects `8080` port of the image to `8080` on the host.
+
+As one can see, the command which runs the server is
+
+```bash
+python server.py --host 0.0.0.0 --port 8080 --dir served/ 
+```
+
+<img src="report_screenshots/dockercomposefile.png">
+
+Running `docker compose up`, which builds the image and starts serving.
 
 <img src="report_screenshots/docker_up.png">
 
-Opening `localhost:8080`:
+Opening `localhost:8080`, which is directory listing for `/served`
 
 <img src="report_screenshots/index_root.png">
 
@@ -70,8 +84,34 @@ Opening `jungle_book.pdf` which shows the ability to work with subdirectories
 
 <img src="report_screenshots/jungle_book.png">
 
-Using `client` for opening `spiderman.html`
 
+Opening a `file.md` file and getting error 404 even though the file DOES exist, but extension is not supported
+
+<img src="report_screenshots/404.png">
+
+Opening a `file.png` file and getting error 404 while file doesn't exist
+
+<img src="report_screenshots/404png.png">
+
+Using `client` for opening `spiderman.html`:
+
+The client can be used with following command:
+
+```bash
+python client.py --host localhost --port 8080 -fname spiderman.html --dpath down/ 
+```
+
+And if the parameters are not provided in the flag, the defaults are used:
+
+```python
+host, port, filename, download_path, https = (
+        args.get("host", "localhost"),
+        int(args.get("port", 8080)),
+        quote(args.get("fname", "/")),
+        args.get("dpath", "."),
+        bool(int(args.get("https", 0)))
+    )
+```
 <img src="report_screenshots/client_spiderman_html.png">
 
 Downloading `fiction/pulp.png` into `down/` directory
@@ -86,6 +126,33 @@ Some file is not found on the server:
 
 <img src="report_screenshots/not_found.png">
 
+#### Browsing friends' files:
+
+To browse my colleague's files, he connected to my hotspot. Then, he executed the command `ipconfig` command in powershell and gave me his ip address: ` 10.229.224.169`
+
+<img src="report_screenshots/max_ip.png">
+
+Then, I opened in my browser the given Ip addess:
+
+<img src="report_screenshots/index_max.png">
+
+And downloaded a file from their server using the command: 
+
+```bash
+py client.py --host 10.229.224.169 --port 8080 --fname /books/ml-book.pdf --dpath served/down
+```
+
+
+<img src="report_screenshots/client_down_max.png">
+
+The file is actually downloaded:
+
+<img src="report_screenshots/down_dir.png">
+
+Since `./` is bind mounted, without recreating the image, I got the new file listed in my file server:
+
+<img src="report_screenshots/down_browser.png">
+
 ### How to run the laboratory
 
 Execute this in powershell:
@@ -97,5 +164,5 @@ docker compose build --no-cache
 docker compose up
 ```
 
-Then, in `localhost:8080` the file server will serve the `served/` directory. To override the default settings, change the command and/or port in [docker-compose.yml](docker-compose.yml).
+Then, in `localhost:8080` the file server will serve the `served/` directory. To override the default settings, change the command in [docker-compose.yml](docker-compose.yml).
 
