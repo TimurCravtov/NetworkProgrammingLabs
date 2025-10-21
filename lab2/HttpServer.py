@@ -1,4 +1,5 @@
 import base64
+import random
 import socket
 import os
 import sys
@@ -25,7 +26,7 @@ class HtmlServer:
         self.port = port
         self.allowed_extensions = allowed_extensions
         self.served_directory = os.path.abspath(served_directory or os.getcwd())
-        self.filter = IpRequestFilter(1)
+        self.filter = IpRequestFilter(5)
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.hit_counter = HitCounter(with_lock=False)
@@ -40,7 +41,8 @@ class HtmlServer:
             conn.close()
             return
 
-        # time.sleep(1)
+        time.sleep(0.5 + random.Random().random()) # simulate delay, avg is 1s
+
         result = receive_from_http_socket(conn, type="request")
 
         if not result:
@@ -65,7 +67,10 @@ class HtmlServer:
             conn.close()
             return
 
+        # hit directory listing
         if os.path.isdir(filepath):
+
+            self.hit_counter.hit(filepath)
             body = self.generate_file_listing_html(rel_path).encode()
             page = build_http_response(200, body)
             conn.sendall(page)
@@ -86,7 +91,7 @@ class HtmlServer:
             content_type = get_content_type(filepath)
             response = build_http_response(200, body, headers={"Content-Type": content_type})
             conn.sendall(response)
-            conn.close()
+            # conn.close()
 
     def generate_file_listing_html(self, rel_path=""):
         abs_path = os.path.join(self.served_directory, rel_path)
@@ -101,13 +106,13 @@ class HtmlServer:
             entry_path = os.path.join(abs_path, entry)
             entry_rel_path = os.path.join(rel_path, entry)
             if os.path.isdir(entry_path):
-                html += f'<li><b><a href="/{entry_rel_path}/">{entry}/</a></b></li>'
+                html += f'<li>[{self.hit_counter.hit_count(entry_path)}]<b><a href="/{entry_rel_path}/">{entry}/</a></b></li>'
 
         for entry in sorted(os.listdir(abs_path)):
             entry_path = os.path.join(abs_path, entry)
             entry_rel_path = os.path.join(rel_path, entry)
             if os.path.isfile(entry_path) and file_has_one_of_extensions(file_path=entry_path, allowed_extensions=self.allowed_extensions):
-                html += f'<li><a href="/{entry_rel_path}">{entry}</a></li>'
+                html += f'<li>[{self.hit_counter.hit_count(entry_path)}] <a href="/{entry_rel_path}">{entry}</a></li>'
 
         html += "</ul></body></html>"
         return html

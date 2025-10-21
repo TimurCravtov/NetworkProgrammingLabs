@@ -14,3 +14,6 @@ class HitCounter:
         else:
             self.file_counter_map[filename] += 1
 
+    def hit_count(self, filename: str):
+        return self.file_counter_map[filename]
+
