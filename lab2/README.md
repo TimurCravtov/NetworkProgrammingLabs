@@ -21,31 +21,98 @@
 
 #### Server (concurrency and HTTP basics)
 
-- The server creates a listening socket and uses `ThreadPoolExecutor(max_workers=1000)` to submit `handle_request` tasks for each accepted connection. This allows many simultaneous clients without spawning unbounded threads.
-- The socket is configured with `setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)` so it can be restarted quickly during development.
-- Requests are parsed using helper functions from `HttpHelper.py`. Responses are built with `build_http_response` and sent with `sendall` to ensure the full response is transmitted.
-- The server supports directory listing (generates a simple HTML index), and serves files with Content-Type guessed from the filename. Only files with allowed extensions are served (default: `.html`, `.htm`, `.pdf`, `.png`). Unsupported extensions return 404.
+The server uses Thead Pool for concurrency. Max workers count is 1000. Each request is then executed in handle_request method
 
-Key server behavior summary (inputs/outputs, error modes):
-- Inputs: TCP connection carrying an HTTP request (only `GET` is supported).
-- Outputs: HTTP response with status codes 200/404/405/429 and appropriate headers/body.
-- Error modes: bad method (405), path escape or missing file (404), too many requests from an IP (429).
+```python
+    def serve_forever(self):
+        self.bind_socket()
+        self.sock.listen(100)
+        print(f"Server running on http://{self.host}:{self.port}")
+
+        with ThreadPoolExecutor(max_workers=1000) as executor:
+            while True:
+                conn, addr = self.sock.accept()
+                print("Connected by", addr)
+                executor.submit(self.handle_request, conn, addr)
+```
 
 Edge cases considered:
 - Path traversal is prevented by checking `os.path.commonpath([served_directory, filepath]) == served_directory`.
 - Directory listing counts use `HitCounter` to show hits next to entries.
-- Client disconnects and malformed requests are handled by closing the connection.
+- Client disconnects and malformed requests are handled by closing the connectio
 
 #### Hit Counter
 
 - `HitCounter` keeps a map from filename (or directory path) to an integer hit count. It provides `hit(filename)` to register a hit and `hit_count(filename)` to retrieve the count.
 - The constructor option `with_lock` simulates correct behavior (True) or a race condition (False). When `with_lock=True` the counter increments are guarded by a threading.Lock; when `with_lock=False` increments are done without synchronization and a small sleep (`sleeping` argument) is used to amplify race conditions for demonstration.
 
+```python
+import threading
+import time
+from collections import defaultdict
+
+class HitCounter:
+    def __init__(self, with_lock=False, sleeping: float = 0):
+        # ...
+
+    def hit(self, filename: str):
+        if self.with_lock:
+            with self.lock:
+                self.increment_hit(filename)
+        else:
+            self.increment_hit(filename)
+
+    def increment_hit(self, filename: str):
+        current = self.hit_count(filename)
+        time.sleep(self.sleeping)
+        self.file_counter_map[filename] = current + 1
+
+    def hit_count(self, filename: str):
+        return self.file_counter_map[filename]
+
+```
+
+The method `hit` is called when one requests directory listing or file hit. And hit_count is called for directory listing to print the number of hits of the directory itself and its dirs and files.
+
 #### Rate limiter (IPRequestFilter)
 
 - `IpRequestFilter` implements a simple token-bucket-like limiter on a per-second basis: it stores counts in `current_second_map` keyed by client IP and allows up to `requests_per_second` per IP per wall-clock second.
 - The filter is thread-safe and uses a lock (`request_update_lock`) when updating counts and rolling over to a new second.
 - When the limit is exceeded, the server responds with HTTP 429 Too Many Requests and closes the connection.
+
+
+```python
+
+class IpRequestFilter:
+    def __init__(self, requests_per_second: int):
+        # ...
+    def process(self, address: str) -> bool:
+
+        now = int(time.time())
+
+        with self.request_update_lock:
+
+            if now > self.current_second:
+                self.current_second = now
+                self.current_second_map = {}
+
+            count = self.current_second_map.get(address, 0) + 1
+            self.current_second_map[address] = count
+
+            return count <= self.requests_per_second
+```
+
+Usage of Rate Limiter:
+```python
+        # in handle request method
+        if not self.filter.process(addr[0]):
+            conn.sendall(self.page_too_many_requests)
+            conn.shutdown(socket.SHUT_WR)
+            time.sleep(0.01)
+
+            conn.close()
+            return
+```
 
 #### Client and tests
 
@@ -95,6 +162,10 @@ self.hit_counter = HitCounter(with_lock=True, sleeping=0.3)
 Rate limiter test run (example with 40 requests/sec):
 
 <img src="report_screenshots/rate_limiter_40.png">
+
+Rate limiter test run (example with 4 requests/sec):
+
+<img src="report_screenshots/rate_limiter_4.png">
 
 ---
 

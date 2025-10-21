@@ -41,4 +41,4 @@ def run_test(requests_per_second):
             time.sleep(sleep_time)
 
 if __name__ == "__main__":
-    run_test(40)
+    run_test(4)

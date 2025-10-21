@@ -23,4 +23,3 @@ class HitCounter:
 
     def hit_count(self, filename: str):
         return self.file_counter_map[filename]
-

@@ -27,3 +27,4 @@ start = time.time_ns()
 some_requests()
 end = time.time_ns()
 print(f"Finished in {(end-start)/10**9}s")
+
