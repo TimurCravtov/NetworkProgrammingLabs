@@ -52,7 +52,7 @@ def _receive_http_common(con: socket.socket):
     """Reads raw HTTP headers and body from socket, returns (first_line, headers, body)."""
     data = b""
     while b"\r\n\r\n" not in data:
-        chunk = con.recv(4096)
+        chunk = con.recv(4609)
         if not chunk:
             return None
         data += chunk
