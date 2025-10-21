@@ -9,3 +9,8 @@ All the laboratory works are implemented in `Python`. Inside each laboratory wor
 - Code: [lab1/](lab1/)
 - Report: [Laboratory 1 Report](lab1/README.md)
 
+### Laboratory 1: *Concurrent* HTTP file server
+
+- Code: [lab2/](lab2/)
+- Report: [Laboratory 2 Report](lab2/README.md)
+
