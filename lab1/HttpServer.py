@@ -71,7 +71,8 @@ class HtmlServer:
             print("Connected by", addr)
 
             try:
-
+                
+                time.sleep(1)
                 result = receive_from_http_socket(conn, type="request")
 
                 if not result:

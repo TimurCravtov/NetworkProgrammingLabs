@@ -30,26 +30,29 @@ class HttpClient:
             headers = {}
 
         self.init_socket()
-        self.client_socket.connect((self.host, self.port))
 
-        if method not in ("GET", "POST", "PUT", "DELETE"):
-            raise ValueError("method must be GET, POST, PUT, or DELETE")
+        with self.client_socket:
 
-        # Build and send the HTTP request
-        request = build_http_request(
-            method=method,
-            path=url,
-            body=body,
-            headers=headers,
-            host=self.host
-        )
-        self.client_socket.sendall(request)
+            self.client_socket.connect((self.host, self.port))
 
-        _, _, version, response_headers, response_body = receive_from_http_socket(self.client_socket, "response")
+            if method not in ("GET", "POST", "PUT", "DELETE"):
+                raise ValueError("method must be GET, POST, PUT, or DELETE")
 
-        self.client_socket.close()
+            # Build and send the HTTP request
+            request = build_http_request(
+                method=method,
+                path=url,
+                body=body,
+                headers=headers,
+                host=self.host
+            )
+            self.client_socket.sendall(request)
 
-        return response_headers, response_body
+            _, status_code, version, response_headers, response_body = receive_from_http_socket(self.client_socket, "response")
+
+            self.client_socket.close()
+
+        return response_headers, response_body, status_code
 
 
 def main():

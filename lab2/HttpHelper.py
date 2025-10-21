@@ -102,6 +102,10 @@ def receive_http_request(s: socket.socket):
 
 
 def receive_http_response(s: socket.socket):
+    """
+    :param s:
+    :return: version, status_code, status_text, headers, body
+    """
     result = _receive_http_common(s)
     if result is None:
         return None

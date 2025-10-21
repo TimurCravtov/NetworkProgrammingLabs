@@ -1,168 +1,123 @@
-## Laboratory work 1: HTTP file server
+
+## Laboratory work 2: Concurrent HTTP file server
 
 ### Task:
 
-Build a simple HTTP server using TCP sockets that serves files from a given directory (passed as a command-line argument). The server should:
-
-* Handle one request at a time.
-
-* Parse HTTP requests and locate the requested file in the directory.
-
-* Send a proper HTTP response with headers + file content.
-
-* Support HTML, PNG, and PDF files.
-
-* Return 404 Not Found if the file is missing or unsupported.
+- Make the HTTP server concurrent so it can handle multiple clients simultaneously.
+- Implement a Hit Counter to track how many times files and directories are requested.
+- Implement a Rate Limiter (IP-based) to prevent abuse by limiting requests per second.
 
 ### Work done
 
-- Created `HttpServer` class
-- Created `HttpHelper` module with util functions
-- Wrote `Dockerfile` for `server.py`
-- Wrote `docker-compose.yml` file which builds the root repository image (defined in `Dockerfile`)
+- Implemented `HtmlServer` with a thread pool using `concurrent.futures.ThreadPoolExecutor` to handle connections concurrently.
+- Implemented `HitCounter` with optional locking to demonstrate race conditions and correctness under concurrency.
+- Implemented `IpRequestFilter` as a simple per-second rate limiter which returns HTTP 429 when the limit is exceeded.
+- Updated `client.py` to work with the server for testing and demonstration.
+- Added small test script `test_rate_limiter.py` to exercise the rate limiter under load.
 
 ---
 
-### Technical implementations:
+### Technical implementations
 
-If there are additional configurations of the scripts, which require parsing command-line arguments, it's done in the format: `--arg value` 
+#### Server (concurrency and HTTP basics)
 
-#### Server:
+- The server creates a listening socket and uses `ThreadPoolExecutor(max_workers=1000)` to submit `handle_request` tasks for each accepted connection. This allows many simultaneous clients without spawning unbounded threads.
+- The socket is configured with `setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)` so it can be restarted quickly during development.
+- Requests are parsed using helper functions from `HttpHelper.py`. Responses are built with `build_http_response` and sent with `sendall` to ensure the full response is transmitted.
+- The server supports directory listing (generates a simple HTML index), and serves files with Content-Type guessed from the filename. Only files with allowed extensions are served (default: `.html`, `.htm`, `.pdf`, `.png`). Unsupported extensions return 404.
 
-_Available configurations:_ `host`, `port`, `dir` (served directory). Default: `0.0.0.0`, `8080`, `.`
+Key server behavior summary (inputs/outputs, error modes):
+- Inputs: TCP connection carrying an HTTP request (only `GET` is supported).
+- Outputs: HTTP response with status codes 200/404/405/429 and appropriate headers/body.
+- Error modes: bad method (405), path escape or missing file (404), too many requests from an IP (429).
 
-- Used method `setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)` to reuse the socket immediately even if it's in `WAITING` state
-- To ensure all chunks are sent, used `sendall` method
-- File handling and security: used `urllib` to handle escape characters in urls (eg `%20`); used validation of url introduced to make sure filepath is within served directory
+Edge cases considered:
+- Path traversal is prevented by checking `os.path.commonpath([served_directory, filepath]) == served_directory`.
+- Directory listing counts use `HitCounter` to show hits next to entries.
+- Client disconnects and malformed requests are handled by closing the connection.
 
-#### Client:
+#### Hit Counter
 
-_Available configurations:_ `host`, `port`, `fname`, `dpath` (download path), `https` (0 or 1 to make the client run via `https`). Default: `localhost`, `8080`, ` `, `down/`, `0`
+- `HitCounter` keeps a map from filename (or directory path) to an integer hit count. It provides `hit(filename)` to register a hit and `hit_count(filename)` to retrieve the count.
+- The constructor option `with_lock` simulates correct behavior (True) or a race condition (False). When `with_lock=True` the counter increments are guarded by a threading.Lock; when `with_lock=False` increments are done without synchronization and a small sleep (`sleeping` argument) is used to amplify race conditions for demonstration.
 
-- Added possibility to provide the methods of request (`GET`, `POST` and others)
-- HTML files are printed by default, and image and pdf files are saved in directory passed via `--dpath`
-- Made sure client has read the whole message using `Content-length` header.
-- Can make request through the internet by setting `--https 1`
+#### Rate limiter (IPRequestFilter)
+
+- `IpRequestFilter` implements a simple token-bucket-like limiter on a per-second basis: it stores counts in `current_second_map` keyed by client IP and allows up to `requests_per_second` per IP per wall-clock second.
+- The filter is thread-safe and uses a lock (`request_update_lock`) when updating counts and rolling over to a new second.
+- When the limit is exceeded, the server responds with HTTP 429 Too Many Requests and closes the connection.
+
+#### Client and tests
+
+- `client.py` remains a small HTTP client that can print HTML or save images/PDFs when Content-Type indicates non-text content.
+- `test_rate_limiter.py` uses `requests` plus ThreadPoolExecutor to generate N requests per second and reports how many responses were 200 vs 429. This script was used to produce the rate limiter screenshots.
+
+---
 
 ### Screenshots
 
-[Dockerfile](Dockerfile) - based on python images, copies all the files from the root to `/app`, and runs `python server.py`. _Info_: not all the files are necessary, but they are removed using `.dockerignore`
+Running a single-threaded server (artificial delay introduced):
 
-<img src="report_screenshots/dockerfile.png">
+<img src="report_screenshots/1threadserver.png">
 
-[Docker Compose file](docker-compose.yml) - defines a single service called `file-service` which builds the current `Dockerfile`, adds a bind volume root (`./`) in `/app`, overrides the `command` and connects `8080` port of the image to `8080` on the host.
+Running a multi-threaded server (same delay) shows concurrent handling:
 
-As one can see, the command which runs the server is
+<img src="report_screenshots/2threadserver.png">
 
-```bash
-python server.py --host 0.0.0.0 --port 8080 --dir served/ 
-```
+Directory listing and hit counter in action:
 
-<img src="report_screenshots/dockercomposefile.png">
+<img src="report_screenshots/1hit.png">
 
-Running `docker compose up`, which builds the image and starts serving.
+Opening a file served by the server:
 
-<img src="report_screenshots/docker_up.png">
+<img src="report_screenshots/spiderman1.png">
 
-Opening `localhost:8080`, which is directory listing for `/served`
+Refreshing the page multiple times to increase hits:
 
-<img src="report_screenshots/index_root.png">
+<img src="report_screenshots/2refreshes.png">
 
-Opening `japanese_book.pdf` (firefox default viewer)
-
-<img src="report_screenshots/japanese_book_pdf.png">
-
-Opening `spiderman photo` which shows that spaces are escaped
-
-<img src="report_screenshots/spiderman_photo.png">
-
-Opening `spiderman.html` which references spiderman photo
-
-<img src="report_screenshots/spiderman_html.png">
-
-Opening `jungle_book.pdf` which shows the ability to work with subdirectories
-
-<img src="report_screenshots/jungle_book.png">
-
-
-Opening a `file.md` file and getting error 404 even though the file DOES exist, but extension is not supported
-
-<img src="report_screenshots/404.png">
-
-Opening a `file.png` file and getting error 404 while file doesn't exist
-
-<img src="report_screenshots/404png.png">
-
-Using `client` for opening `spiderman.html`:
-
-The client can be used with following command:
-
-```bash
-python client.py --host localhost --port 8080 -fname spiderman.html --dpath down/ 
-```
-
-And if the parameters are not provided in the flag, the defaults are used:
+Hit counter demonstration without lock (race conditions visible when many concurrent updates):
 
 ```python
-host, port, filename, download_path, https = (
-        args.get("host", "localhost"),
-        int(args.get("port", 8080)),
-        quote(args.get("fname", "/")),
-        args.get("dpath", "."),
-        bool(int(args.get("https", 0)))
-    )
-```
-<img src="report_screenshots/client_spiderman_html.png">
-
-Downloading `fiction/pulp.png` into `down/` directory
-
-<img src="report_screenshots/client_down_pulp.png">
-
-The file is actually downloaded:
-
-<img src="report_screenshots/down_is_there.png">
-
-Some file is not found on the server:
-
-<img src="report_screenshots/not_found.png">
-
-#### Browsing friends' files:
-
-To browse my colleague's files, he connected to my hotspot. Then, he executed the command `ipconfig` command in powershell and gave me his ip address: ` 10.229.224.169`
-
-<img src="report_screenshots/max_ip.png">
-
-Then, I opened in my browser the given Ip addess:
-
-<img src="report_screenshots/index_max.png">
-
-And downloaded a file from their server using the command: 
-
-```bash
-py client.py --host 10.229.224.169 --port 8080 --fname /books/ml-book.pdf --dpath served/down
+self.hit_counter = HitCounter(with_lock=False, sleeping=0.3)
 ```
 
+<img src="report_screenshots/hit_wolock.png">
 
-<img src="report_screenshots/client_down_max.png">
+With locking enabled the hit counts update reliably:
 
-The file is actually downloaded:
+```python
+self.hit_counter = HitCounter(with_lock=True, sleeping=0.3)
+```
 
-<img src="report_screenshots/down_dir.png">
+<img src="report_screenshots/hit_w_lock.png">
 
-Since `./` is bind mounted, without recreating the image, I got the new file listed in my file server:
+Rate limiter test run (example with 40 requests/sec):
 
-<img src="report_screenshots/down_browser.png">
+<img src="report_screenshots/rate_limiter_40.png">
+
+---
 
 ### How to run the laboratory
 
 Execute this in powershell:
 
-```bash
+```powershell
 git clone https://github.com/TimurCravtov/NetworkProgrammingLabs.git
-cd NetworkProgrammingLabs/lab1
+cd NetworkProgrammingLabs/lab2
 docker compose build --no-cache
 docker compose up
 ```
 
-Then, in `localhost:8080` the file server will serve the `served/` directory. To override the default settings, change the command in [docker-compose.yml](docker-compose.yml).
+Then, open `http://localhost:8080` in your browser to browse the `served/` directory. The server can be configured with command-line flags in `server.py` (see `FileHelper.parse_args`): `--host`, `--port`, `--dir`.
 
+To run the rate limiter test locally (without Docker) you can run:
+
+```powershell
+py -3 -m pip install requests
+py test_rate_limiter.py
+```
+
+Notes:
+- To demo the hit counter race condition, change the `HitCounter` initialization in `HttpServer.py` to `with_lock=False` and set `sleeping` to a small value (e.g., `0.3`) and then refresh pages concurrently.
+- The rate limiter is intentionally simple (per-second counts) for demonstration; a production limiter would use sliding windows or leaky-bucket/token-bucket algorithms.

@@ -29,7 +29,7 @@ class HtmlServer:
         self.filter = IpRequestFilter(5)
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        self.hit_counter = HitCounter(with_lock=False)
+        self.hit_counter = HitCounter(with_lock=True, sleeping=0)
 
         print("Serving directory:", self.served_directory)
 
@@ -37,11 +37,13 @@ class HtmlServer:
 
         if not self.filter.process(addr[0]):
             conn.sendall(self.page_too_many_requests)
-            conn.shutdown(socket.SHUT_RD)
+            conn.shutdown(socket.SHUT_WR)
+            time.sleep(0.01)
+
             conn.close()
             return
 
-        time.sleep(0.5 + random.Random().random()) # simulate delay, avg is 1s
+        time.sleep(0.5 + random.random())
 
         result = receive_from_http_socket(conn, type="request")
 
@@ -91,12 +93,15 @@ class HtmlServer:
             content_type = get_content_type(filepath)
             response = build_http_response(200, body, headers={"Content-Type": content_type})
             conn.sendall(response)
-            # conn.close()
+            conn.close()
 
     def generate_file_listing_html(self, rel_path=""):
+
+        filepath = os.path.abspath(os.path.join(self.served_directory, rel_path))
+
         abs_path = os.path.join(self.served_directory, rel_path)
         html = "<html><body>"
-        html += f"<h2>Index of /{rel_path}</h2><ul>"
+        html += f"<h2>Index of [{self.hit_counter.hit_count(filepath)}]/{rel_path}</h2><ul>"
 
         if rel_path.strip("/"):
             parent_rel = os.path.dirname(rel_path.rstrip("/"))
@@ -131,19 +136,11 @@ class HtmlServer:
 
     def serve_forever(self):
         self.bind_socket()
-        self.sock.listen(5)
+        self.sock.listen(100)
         print(f"Server running on http://{self.host}:{self.port}")
 
-        with ThreadPoolExecutor(max_workers=10) as executor:
-
+        with ThreadPoolExecutor(max_workers=1000) as executor:
             while True:
                 conn, addr = self.sock.accept()
-
-                def task():
-                    try:
-                        print("Connected by", addr)
-                        self.handle_request(conn, addr)
-                    except Exception as e:
-                        print(f"Error handling request from {addr}: {e}")
-
-                executor.submit(task)
+                print("Connected by", addr)
+                executor.submit(self.handle_request, conn, addr)
