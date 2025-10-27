@@ -1,0 +1,40 @@
+# Build results
+bin/
+obj/
+out/
+
+# Visual Studio files
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Rider IDE files
+.idea/
+*.sln.iml
+
+# NuGet
+*.nupkg
+packages/
+.nuget/
+
+# VS Code
+.vscode/
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+
+# Recycle Bin
+$RECYCLE.BIN/
+
+# OS generated files
+Thumbs.db
+.DS_Store
+
+# Publish output
+publish/
