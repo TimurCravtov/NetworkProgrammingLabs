@@ -15,5 +15,18 @@
     <ItemGroup>
       <None Include=".frontend\index.html" />
     </ItemGroup>
+
+    <ItemGroup>
+      <PackageReference Include="xunit" Version="2.9.3" />
+    </ItemGroup>
+    
+    <!-- Exclude generated/other projects' obj files (and test project files) from the main project's compile
+         This avoids duplicate assembly attributes when a test project is created inside the same folder. -->
+    <ItemGroup>
+      <!-- Prevent accidental inclusion of any generated .cs files under obj folders from subfolders -->
+      <Compile Remove="**\obj\**\*.cs" />
+      <!-- If you keep test projects inside this folder you can also explicitly remove their sources from the main compile -->
+      <Compile Remove="MemoryScramble.Tests\**\*.cs" />
+    </ItemGroup>
     
 </Project>

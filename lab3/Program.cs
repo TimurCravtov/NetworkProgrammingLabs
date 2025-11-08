@@ -1,25 +1,59 @@
-﻿using Microsoft.AspNetCore.Builder;
+﻿using System.Net;
+using MemoryScramble.Boards;
+using MemoryScramble.Commands;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
 
-public class Program
+namespace MemoryScramble;
+
+public static class Program
 {
-    public static void Main(string[] args)
+    public static async Task Main(string[] args)
     {   
-        
         var serverPort = args.Length > 0 ? int.Parse(args[0]) : 8080;
-        Board.ParseFromFile("Boards/ab.txt");
+        var boardFile = args.Length > 1 ? args[1] : "zoom.txt";
         
+        await Board.ParseFromFile($"Boards/data/{boardFile}");
+
         Console.WriteLine(Board.Instance);
-        
+
         var builder = WebApplication.CreateBuilder(args);
+
+        builder.Services.AddCors(options =>
+        {
+            options.AddDefaultPolicy(policy =>
+                policy.AllowAnyOrigin()
+                    .AllowAnyHeader()
+                    .AllowAnyMethod());
+            
+        });
+
         var app = builder.Build();
+        app.UseCors();
+
+        app.MapGet("/look/{playerId}", async (string playerId) => await Command.Look(Board.Instance, playerId));
         
-        app.MapGet("/{playerId}/{position}", () => "Hello from server"); // responds to GET /
+        app.MapGet("/flip/{playerId}/{position}", async (string playerId, string position) =>
+        {
+            var coords = position.Split(',').Select(int.Parse).ToArray();
+            try
+            {
+                string result = await Command.Flip(Board.Instance, playerId, coords[0], coords[1]);
+                return Results.Text(result);
+            }
+            catch (Exception e)
+            {
+                return Results.Conflict(e.Message);
+            }
+        });
+
+
+        app.MapGet("/watch/{playerId}", async (string playerId) => await Command.Watch(Board.Instance, playerId));
+        
+        app.MapGet("/leaderboard/", async () => await Command.LeaderBoard(Board.Instance));
         
         var url = "http://localhost:" + serverPort;
-        
-        app.Run(url);
-        
+        await app.RunAsync(url);
     }
 }
-
