@@ -5,13 +5,15 @@ using System.IO;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Xunit;
 
 namespace MemoryScramble.Boards;
 
 public enum CardStatus { Down, Up, None }
 
-public sealed record Card(string Value, int Row, int Column)
+public sealed record Card(string value, int Row, int Column)
 {
+    public string Value = value;
     public CardStatus Status { get; set; } = CardStatus.Down;
     public string? ControlledBy { get; set; } = null;
     public Queue<TaskCompletionSource<bool>> WaitQueue { get; } = new();
@@ -48,8 +50,51 @@ public sealed class Board
         Rows = cards.GetLength(0);
         Cols = cards.GetLength(1);
         _cards = cards;
+        CheckRep();
     }
 
+    private void CheckRep()
+    {
+        Assert.Equal(Rows, _cards.GetLength(0));
+        Assert.Equal(Cols, _cards.GetLength(1));
+        
+        foreach (var card in _cards)
+        {
+            Assert.True(Enum.IsDefined(typeof(CardStatus), card.Status), $"Invalid status for card at [{card.Row},{card.Column}]");
+            if (card.ControlledBy != null)
+                Assert.Contains(card.ControlledBy, Players.Keys);
+        }
+
+        var controlledCards = new HashSet<Card>();
+        foreach (var player in Players.Values)
+        {
+            if (player.FirstCard != null)
+            {
+                Assert.Same(_cards[player.FirstCard.Row, player.FirstCard.Column], player.FirstCard);
+                Assert.True(controlledCards.Add(player.FirstCard), $"Card at [{player.FirstCard.Row},{player.FirstCard.Column}] controlled by multiple players");
+            }
+            if (player.SecondCard != null)
+            {
+                Assert.Same(_cards[player.SecondCard.Row, player.SecondCard.Column], player.SecondCard);
+                Assert.True(controlledCards.Add(player.SecondCard), $"Card at [{player.SecondCard.Row},{player.SecondCard.Column}] controlled by multiple players");
+            }
+            if (player.LastFirstCard != null)
+            {
+                Assert.Same(_cards[player.LastFirstCard.Row, player.LastFirstCard.Column], player.LastFirstCard);
+            }
+            if (player.LastSecondCard != null)
+            {
+                Assert.Same(_cards[player.LastSecondCard.Row, player.LastSecondCard.Column], player.LastSecondCard);
+            }
+        }
+
+        foreach (var card in _cards)
+        {
+            Assert.NotNull(card.WaitQueue);
+        }
+    }
+
+    
     private void SetModified() => _boardModified = true;
 
     private void FinishPreviousTurn(Player player)
@@ -95,7 +140,7 @@ public sealed class Board
         {
             card.Status = CardStatus.Down;
             SetModified();
-            NotifyWatchers().ConfigureAwait(false);
+            _ = NotifyWatchers();
         }
     }
 
@@ -105,7 +150,14 @@ public sealed class Board
         return _cards[row, column].Status == CardStatus.None;
     }
 
-    public async Task<bool> Flip(int row, int col, string playerId, out bool boardModified)
+    public async Task<bool> Flip(int row, int column, string playerId)
+    {
+        var (success, mod) = await _flip(row, column, playerId);
+        if (mod) await NotifyWatchers();
+        return success;
+    }
+    
+    public async Task<(bool Success, bool BoardModified)> _flip(int row, int col, string playerId)
     {
         _boardModified = false;
         var player = Players.GetOrAdd(playerId, id => new Player(id));
@@ -118,11 +170,7 @@ public sealed class Board
             {
                 FinishPreviousTurn(player);
 
-                if (IsEmptySpace(row, col)) 
-                {
-                    boardModified = _boardModified;
-                    return false;
-                }
+                if (IsEmptySpace(row, col)) return (false, _boardModified);
 
                 if (card.Status == CardStatus.Down)
                 {
@@ -130,20 +178,18 @@ public sealed class Board
                     card.Status = CardStatus.Up;
                     player.FirstCard = card;
                     SetModified();
-                    boardModified = _boardModified;
-                    return true;
+                    return (true, _boardModified);
                 }
                 else if (card.ControlledBy == null)
                 {
                     card.ControlledBy = playerId;
                     player.FirstCard = card;
                     SetModified();
-                    boardModified = _boardModified;
-                    return true;
+                    return (true, _boardModified);
                 }
                 else
                 {
-                    TaskCompletionSource<bool> tcs = new();
+                    var tcs = new TaskCompletionSource<bool>();
                     card.WaitQueue.Enqueue(tcs);
 
                     _lock.Release();
@@ -155,13 +201,11 @@ public sealed class Board
                         card.ControlledBy = playerId;
                         player.FirstCard = card;
                         SetModified();
-                        boardModified = _boardModified;
-                        return true;
+                        return (true, _boardModified);
                     }
                     else
                     {
-                        boardModified = _boardModified;
-                        return false;
+                        return (false, _boardModified);
                     }
                 }
             }
@@ -173,8 +217,7 @@ public sealed class Board
                     LoseControl(player.FirstCard, false);
                     player.FirstCard = null;
                     SetModified();
-                    boardModified = _boardModified;
-                    return false;
+                    return (false, _boardModified);
                 }
 
                 if (card.Status == CardStatus.Up && card.ControlledBy != null)
@@ -183,8 +226,7 @@ public sealed class Board
                     player.LastFirstCard = player.FirstCard;
                     player.FirstCard = null;
                     SetModified();
-                    boardModified = _boardModified;
-                    return false;
+                    return (false, _boardModified);
                 }
 
                 if (card.Status == CardStatus.Down)
@@ -204,8 +246,7 @@ public sealed class Board
                     player.FirstCard = null;
                     player.SecondCard = null;
                     SetModified();
-                    boardModified = _boardModified;
-                    return true;
+                    return (true, _boardModified);
                 }
                 else
                 {
@@ -220,8 +261,7 @@ public sealed class Board
                     player.FirstCard = null;
                     player.SecondCard = null;
                     SetModified();
-                    boardModified = _boardModified;
-                    return true;
+                    return (true, _boardModified);
                 }
             }
         }
@@ -243,7 +283,7 @@ public sealed class Board
     {
         while (card.WaitQueue.TryDequeue(out var tcs))
         {
-            tcs.SetResult(value);
+            tcs.TrySetResult(value);
         }
     }
 
@@ -291,20 +331,46 @@ public sealed class Board
     public async Task<string> Watch(string playerId)
     {
         var player = Players.GetOrAdd(playerId, id => new Player(id));
-        TaskCompletionSource<string> watcher = new();
+        var watcher = new TaskCompletionSource<string>();
         Watchers[playerId] = watcher;
         return await watcher.Task;
     }
 
     private async Task NotifyWatchers()
     {
-        foreach (var keyValuePair in Watchers.ToArray())
+        foreach (var kvp in Watchers.ToArray())
         {
-            keyValuePair.Value.SetResult(await this.ToWatchString(keyValuePair.Key));
+            kvp.Value.TrySetResult(await ToWatchString(kvp.Key));
         }
         Watchers.Clear();
     }
 
+    public async Task<string> Map(string playerId, Func<string,Task<string>> f)
+    {
+        List<Card> snapshot;
+        await _lock.WaitAsync();
+        try {
+            snapshot = _cards.Cast<Card>().Where(c=>c.Status!=CardStatus.None).ToList();
+        }
+        finally { _lock.Release(); }
+
+        var tasks = snapshot.Select(async card => {
+            var newVal = await f(card.Value); 
+
+            await _lock.WaitAsync();
+            try {
+                card.Value = newVal;
+                SetModified();
+            }
+            finally { _lock.Release(); }
+        }).ToList();
+
+        await Task.WhenAll(tasks); 
+
+        return await ToWatchString(playerId);
+    }
+
+    
     public static async Task<Board> ParseFromFile(string relativeFilename)
     {
         var path = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", relativeFilename);

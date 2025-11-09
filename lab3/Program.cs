@@ -12,7 +12,7 @@ public static class Program
     public static async Task Main(string[] args)
     {   
         var serverPort = args.Length > 0 ? int.Parse(args[0]) : 8080;
-        var boardFile = args.Length > 1 ? args[1] : "zoom.txt";
+        var boardFile = args.Length > 1 ? args[1] : "ab.txt";
         
         await Board.ParseFromFile($"Boards/data/{boardFile}");
 
@@ -48,10 +48,12 @@ public static class Program
             }
         });
 
+        app.MapGet("replace/{playerId}/{fromCard}/{toCard}", async (string playerId, string fromCard, string toCard) => 
+            await Board.Instance.Map(playerId, async oldVal => oldVal == fromCard ? toCard : oldVal));
 
+        
         app.MapGet("/watch/{playerId}", async (string playerId) => await Command.Watch(Board.Instance, playerId));
         
-        app.MapGet("/leaderboard/", async () => await Command.LeaderBoard(Board.Instance));
         
         var url = "http://localhost:" + serverPort;
         await app.RunAsync(url);
