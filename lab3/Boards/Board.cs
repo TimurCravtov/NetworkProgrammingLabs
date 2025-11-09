@@ -1,21 +1,19 @@
-using System;
 using System.Collections.Concurrent;
-using System.Collections.Generic;
-using System.IO;
 using System.Text;
-using System.Threading;
-using System.Threading.Tasks;
 using Xunit;
 
 namespace MemoryScramble.Boards;
 
 public enum CardStatus { Down, Up, None }
 
-public sealed record Card(string value, int Row, int Column)
+public sealed class Card(string value, int row, int column)
 {
-    public string Value = value;
+    public string Value { get; set; } = value;
+    public int Row => row;
+    public int Column => column;
     public CardStatus Status { get; set; } = CardStatus.Down;
     public string? ControlledBy { get; set; } = null;
+    public SemaphoreSlim _lock { get; } = new(1, 1);
     public Queue<TaskCompletionSource<bool>> WaitQueue { get; } = new();
 }
 
@@ -42,7 +40,7 @@ public sealed class Board
     public ConcurrentDictionary<string, Player> Players { get; } = new();
     public ConcurrentDictionary<string, TaskCompletionSource<string>> Watchers = new();
 
-    private readonly SemaphoreSlim _lock = new(1, 1);
+    private readonly SemaphoreSlim _lock = new(1, 1); // Board-wide lock
     private bool _boardModified;
 
     private Board(Card[,] cards)
@@ -57,7 +55,7 @@ public sealed class Board
     {
         Assert.Equal(Rows, _cards.GetLength(0));
         Assert.Equal(Cols, _cards.GetLength(1));
-        
+
         foreach (var card in _cards)
         {
             Assert.True(Enum.IsDefined(typeof(CardStatus), card.Status), $"Invalid status for card at [{card.Row},{card.Column}]");
@@ -94,16 +92,28 @@ public sealed class Board
         }
     }
 
-    
     private void SetModified() => _boardModified = true;
 
+    
+    /// <summary>
+    /// Finished the turn
+    /// </summary>
+    /// <param name="player"></param>
     private void FinishPreviousTurn(Player player)
     {
         if (player.LastFirstCard != null)
         {
+            // both cards
             if (player.LastSecondCard != null)
             {
+                player.LastFirstCard._lock.WaitAsync();
+                player.LastSecondCard._lock.WaitAsync();
+                
                 bool isMatch = player.LastFirstCard.Value == player.LastSecondCard.Value;
+                
+                player.LastSecondCard._lock.Release();
+                player.LastFirstCard._lock.Release();
+                
                 if (isMatch)
                 {
                     player.LastFirstCard.Status = CardStatus.None;
@@ -144,34 +154,65 @@ public sealed class Board
         }
     }
 
+    /// <summary>
+    /// Checks if the selected area is invalid to flip due to emptiness
+    /// </summary>
+    /// <param name="row">Row</param>
+    /// <param name="column">Column</param>
+    /// <returns>True of row, column out of border or the card status is None</returns>
     private bool IsEmptySpace(int row, int column)
     {
         if (row < 0 || row >= Rows || column < 0 || column >= Cols) return true;
         return _cards[row, column].Status == CardStatus.None;
     }
-
+    
+    /// <summary>
+    /// Main wrapper method for flipping a specific cell. See <see cref="_flip"/>
+    /// </summary>
+    /// <param name="row">The number of the row of the cell</param>
+    /// <param name="column">The number of the column of the cell</param>
+    /// <param name="playerId">Player who executes the action</param>
+    /// <returns>True if flip is successfull, otherwise false</returns>
     public async Task<bool> Flip(int row, int column, string playerId)
     {
         var (success, mod) = await _flip(row, column, playerId);
         if (mod) await NotifyWatchers();
         return success;
     }
-    
+
+    /// <summary>
+    /// Method for actually performing the flip of the cell
+    /// </summary>
+    /// <param name="row">The number of the row of the cell</param>
+    /// <param name="column">The number of the column of the cell</param>
+    /// <param name="playerId">Player who executes the action</param>
+    /// <returns>
+    /// <para>
+    /// <c>Success</c>: <c>true</c> if the cell flip was attempted and executed; 
+    /// <c>false</c> if the coordinates were invalid or the action was blocked.
+    /// </para>
+    /// <para>
+    /// <c>BoardModified</c>: <c>true</c> if one or more cells were successfully 
+    /// flipped on the board; otherwise, <c>false</c>.
+    /// </para>
+    /// </returns>
     public async Task<(bool Success, bool BoardModified)> _flip(int row, int col, string playerId)
     {
         _boardModified = false;
         var player = Players.GetOrAdd(playerId, id => new Player(id));
+        if (row < 0 || row >= Rows || col < 0 || col >= Cols) return (false, _boardModified);
         Card card = _cards[row, col];
 
         await _lock.WaitAsync();
         try
         {
-            if (player.FirstCard == null)
+            if (player.FirstCard == null) // No first card => this is the first card
             {
-                FinishPreviousTurn(player);
+                FinishPreviousTurn(player); 
+                
+                if (IsEmptySpace(row, col)) return (false, _boardModified); // identified empty space: 
 
-                if (IsEmptySpace(row, col)) return (false, _boardModified);
-
+                // if card status is up, control it
                 if (card.Status == CardStatus.Down)
                 {
                     card.ControlledBy = playerId;
@@ -180,7 +221,7 @@ public sealed class Board
                     SetModified();
                     return (true, _boardModified);
                 }
-                else if (card.ControlledBy == null)
+                else if (card.ControlledBy == null) // if no one controls the card, control it
                 {
                     card.ControlledBy = playerId;
                     player.FirstCard = card;
@@ -189,6 +230,7 @@ public sealed class Board
                 }
                 else
                 {
+                    // if someone controls the card, wait in the queue
                     var tcs = new TaskCompletionSource<bool>();
                     card.WaitQueue.Enqueue(tcs);
 
@@ -196,6 +238,7 @@ public sealed class Board
                     bool acquired = await tcs.Task;
                     await _lock.WaitAsync();
 
+                    // if successfully waited, control the card
                     if (acquired)
                     {
                         card.ControlledBy = playerId;
@@ -209,9 +252,10 @@ public sealed class Board
                     }
                 }
             }
-            else
+            else // if it's the second card opened
             {
-                if (player.FirstCard == card)
+                // if same card as first, lose control 
+                if (player.FirstCard == card)  
                 {
                     player.LastFirstCard = player.FirstCard;
                     LoseControl(player.FirstCard, false);
@@ -220,6 +264,7 @@ public sealed class Board
                     return (false, _boardModified);
                 }
 
+                // to avoid dedlocks, if card is controlled, lose control of both
                 if (card.Status == CardStatus.Up && card.ControlledBy != null)
                 {
                     LoseControl(player.FirstCard, false);
@@ -228,40 +273,58 @@ public sealed class Board
                     SetModified();
                     return (false, _boardModified);
                 }
-
-                if (card.Status == CardStatus.Down)
+                
+                _lock.Release();
+                await card._lock.WaitAsync();
+                
+                // if not controlled, try to control
+                try
                 {
-                    card.Status = CardStatus.Up;
-                    SetModified();
+                    string cardValue = card.Value;
+                    
+                    // flip the card if down
+                    if (card.Status == CardStatus.Down)
+                    {
+                        card.Status = CardStatus.Up;
+                        SetModified();
+                    }
+
+                    await _lock.WaitAsync();
+                    
+                    // if match, control both cards until the next turn
+                    if (player.FirstCard.Value == cardValue)
+                    {
+                        card.ControlledBy = playerId;
+                        player.SecondCard = card;
+
+                        player.LastFirstCard = player.FirstCard;
+                        player.LastSecondCard = player.SecondCard;
+
+                        player.FirstCard = null;
+                        player.SecondCard = null;
+                        SetModified();
+                        return (true, _boardModified);
+                    }
+                    
+                    // if not match, lose control of both cards, reset the cards
+                    else 
+                    {
+                        player.SecondCard = card;
+                        LoseControl(player.FirstCard, false);
+                        LoseControl(player.SecondCard, false);
+
+                        player.LastFirstCard = player.FirstCard;
+                        player.LastSecondCard = player.SecondCard;
+
+                        player.FirstCard = null;
+                        player.SecondCard = null;
+                        SetModified();
+                        return (true, _boardModified);
+                    }
                 }
-
-                if (player.FirstCard.Value == card.Value)
+                finally
                 {
-                    card.ControlledBy = playerId;
-                    player.SecondCard = card;
-
-                    player.LastFirstCard = player.FirstCard;
-                    player.LastSecondCard = player.SecondCard;
-
-                    player.FirstCard = null;
-                    player.SecondCard = null;
-                    SetModified();
-                    return (true, _boardModified);
-                }
-                else
-                {
-                    player.SecondCard = card;
-
-                    LoseControl(player.FirstCard, false);
-                    LoseControl(player.SecondCard, false);
-
-                    player.LastFirstCard = player.FirstCard;
-                    player.LastSecondCard = player.SecondCard;
-
-                    player.FirstCard = null;
-                    player.SecondCard = null;
-                    SetModified();
-                    return (true, _boardModified);
+                    card._lock.Release();
                 }
             }
         }
@@ -271,6 +334,10 @@ public sealed class Board
         }
     }
 
+    /// <summary>
+    /// Notifies the first waiter of the card that it's free
+    /// </summary>
+    /// <param name="card">The card which became free</param>
     private void InformCardFree(Card card)
     {
         if (card.WaitQueue.TryDequeue(out var tcs))
@@ -279,6 +346,11 @@ public sealed class Board
         }
     }
 
+    /// <summary>
+    /// Informs all the waiters about the status of the card (used to deny access)
+    /// </summary>
+    /// <param name="card">The card which status we share</param>
+    /// <param name="value">Status of the operation</param>
     private void InformAllWaiters(Card card, bool value = false)
     {
         while (card.WaitQueue.TryDequeue(out var tcs))
@@ -287,13 +359,17 @@ public sealed class Board
         }
     }
 
+    /// <summary>
+    /// Make the card lose its owner and informing the next one in the queue that it's free
+    /// </summary>
+    /// <param name="card"></param>
+    /// <param name="turnDown"></param>
     private void LoseControl(Card? card, bool turnDown)
     {
         if (card != null)
         {
             card.ControlledBy = null;
             InformCardFree(card);
-            SetModified();
         }
     }
 
@@ -342,35 +418,82 @@ public sealed class Board
         {
             kvp.Value.TrySetResult(await ToWatchString(kvp.Key));
         }
+
+        _boardModified = false;
         Watchers.Clear();
     }
-
-    public async Task<string> Map(string playerId, Func<string,Task<string>> f)
+    
+    public async Task<string> Map(string playerId, Func<string, Task<string>> f)
     {
-        List<Card> snapshot;
+        IReadOnlyList<(string Value, Card Card)> snapshot;
         await _lock.WaitAsync();
-        try {
-            snapshot = _cards.Cast<Card>().Where(c=>c.Status!=CardStatus.None).ToList();
+        try
+        {
+            snapshot = _cards.Cast<Card>()
+                             .Where(c => c.Status != CardStatus.None)
+                             .Select(c => (Value: c.Value, Card: c))
+                             .ToList();
         }
         finally { _lock.Release(); }
 
-        var tasks = snapshot.Select(async card => {
-            var newVal = await f(card.Value); 
+        var groups = snapshot
+            .GroupBy(t => t.Value)
+            .ToDictionary(g => g.Key, g => g.ToList());
 
-            await _lock.WaitAsync();
-            try {
-                card.Value = newVal;
+        var replacementMap = new Dictionary<string, string>(StringComparer.Ordinal);
+        var computeTasks = groups.Keys.Select(async oldVal =>
+        {
+            var newVal = await f(oldVal);
+            lock (replacementMap) replacementMap[oldVal] = newVal;
+        });
+        await Task.WhenAll(computeTasks);
+
+        _boardModified = false;
+
+        var applyTasks = groups.Select(async kv =>
+        {
+            var (oldVal, tuples) = (kv.Key, kv.Value);
+            if (!replacementMap.TryGetValue(oldVal, out var newVal))
+                return;
+
+            var cards = tuples.Select(t => t.Card).ToList();
+            var ordered = cards.OrderBy(c => c.Row).ThenBy(c => c.Column).ToList();
+            var acquired = new List<SemaphoreSlim>();
+
+            try
+            {
+                foreach (var card in ordered)
+                {
+                    await card._lock.WaitAsync();
+                    acquired.Add(card._lock);
+                }
+
+                foreach (var card in cards)
+                    card.Value = newVal;
+
                 SetModified();
             }
-            finally { _lock.Release(); }
-        }).ToList();
+            finally
+            {
+                foreach (var l in acquired)
+                    l.Release();
+            }
+        });
 
-        await Task.WhenAll(tasks); 
+        await Task.WhenAll(applyTasks);
+
+        // 4. Notify
+        if (_boardModified)
+            await NotifyWatchers();
 
         return await ToWatchString(playerId);
     }
 
-    
+    public static void RandomEmojiBoard(int rows, int column)
+    {
+        return;
+    }
+
     public static async Task<Board> ParseFromFile(string relativeFilename)
     {
         var path = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", relativeFilename);

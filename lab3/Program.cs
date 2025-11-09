@@ -49,8 +49,11 @@ public static class Program
         });
 
         app.MapGet("replace/{playerId}/{fromCard}/{toCard}", async (string playerId, string fromCard, string toCard) => 
-            await Board.Instance.Map(playerId, async oldVal => oldVal == fromCard ? toCard : oldVal));
-
+            await Command.Map(Board.Instance, playerId, async oldVal =>
+            {
+                Thread.Sleep(3000);
+                return oldVal == fromCard ? toCard : oldVal;
+            }));
         
         app.MapGet("/watch/{playerId}", async (string playerId) => await Command.Watch(Board.Instance, playerId));
         
