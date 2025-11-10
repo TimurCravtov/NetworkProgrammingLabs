@@ -10,9 +10,9 @@ namespace MemoryScramble.Tests;
 public class BoardTest
 {
     [Fact]
-    public async void Identified_Empty_Space()
+    public async Task Identified_Empty_Space()
     {
-        var board = await Board.ParseFromFile("../Boards/data/ab.txt");
+        var board = await Board.ParseFromFile("ab.txt");
         Assert.True(await board.Flip(0,0, "ryangosling")); // it's A
         Assert.True(await board.Flip(0, 2, "ryangosling")); // it's other A
         Assert.True(await board.Flip(0, 3, "ryangosling")); // it's other B
@@ -21,7 +21,7 @@ public class BoardTest
     }
     
     [Fact]
-    public async void IfFaceDown_FaceUp()
+    public async Task IfFaceDown_FaceUp()
     {
         var board = await Board.ParseFromFile("../Boards/data/ab.txt");
         

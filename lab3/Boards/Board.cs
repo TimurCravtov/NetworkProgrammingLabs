@@ -28,6 +28,10 @@ public sealed class Player
     public Player(string id) => Id = id;
 }
 
+
+/// <summary>
+/// This class holds all the data about the board, including its cells, players and watchers
+/// </summary>
 public sealed class Board
 {
     private static Board? _instance;
@@ -51,14 +55,22 @@ public sealed class Board
         CheckRep();
     }
     
+    /// <summary>
+    /// Checks representation invariant for the board
+    /// </summary>
     private void CheckRep()
     {
+        
+        // rows and columns are actually valid
         Assert.Equal(Rows, _cards.GetLength(0));
         Assert.Equal(Cols, _cards.GetLength(1));
 
         foreach (var card in _cards)
         {
+            // valid card status
             Assert.True(Enum.IsDefined(typeof(CardStatus), card.Status), $"Invalid status for card at [{card.Row},{card.Column}]");
+            
+            // player which controls the card exists
             if (card.ControlledBy != null)
                 Assert.Contains(card.ControlledBy, Players.Keys);
         }
@@ -96,7 +108,7 @@ public sealed class Board
 
     
     /// <summary>
-    /// Finished the turn
+    /// Finishes the turn. Needs to be called before the first card in the new turn
     /// </summary>
     /// <param name="player"></param>
     private void FinishPreviousTurn(Player player)
@@ -144,6 +156,10 @@ public sealed class Board
         }
     }
 
+    /// <summary>
+    /// Self explainatory, isn't it
+    /// </summary>
+    /// <param name="card"></param>
     private void TurnDownIfUncontrolled(Card card)
     {
         if (card.Status == CardStatus.Up && card.ControlledBy == null)
@@ -382,27 +398,25 @@ public sealed class Board
         }
     }
 
+    /// <summary>
+    /// Gives the string which represents the board state from the perspective of the player
+    /// </summary>
+    /// <param name="playerId"></param>
+    /// <returns></returns>
     public async Task<string> ToWatchString(string playerId)
     {
-        var sb = new StringBuilder();
-        sb.Append($"{Rows}x{Cols}\n");
+        var viewSnapshot = new (CardStatus Status, string Value, string ControlledBy)[Rows, Cols];
 
         await _lock.WaitAsync();
         try
         {
             for (int r = 0; r < Rows; r++)
-            for (int c = 0; c < Cols; c++)
             {
-                var card = _cards[r, c];
-                sb.Append(card.Status switch
+                for (int c = 0; c < Cols; c++)
                 {
-                    CardStatus.None => "none",
-                    CardStatus.Down => "down",
-                    CardStatus.Up when card.ControlledBy == playerId => $"my {card.Value}",
-                    CardStatus.Up => $"up {card.Value}",
-                    _ => "down"
-                });
-                sb.Append('\n');
+                    var card = _cards[r, c];
+                    viewSnapshot[r, c] = (card.Status, card.Value, card.ControlledBy);
+                }
             }
         }
         finally
@@ -410,9 +424,36 @@ public sealed class Board
             _lock.Release();
         }
 
+        var sb = new StringBuilder();
+        sb.Append($"{Rows}x{Cols}\n");
+    
+        for (int r = 0; r < Rows; r++)
+        {
+            for (int c = 0; c < Cols; c++)
+            {
+                var (status, value, controlledBy) = viewSnapshot[r, c];
+
+                sb.Append(status switch
+                {
+                    CardStatus.None => "none",
+                    CardStatus.Down => "down",
+                    // Access 'value' and 'controlledBy' from the snapshot
+                    CardStatus.Up when controlledBy == playerId => $"my {value}",
+                    CardStatus.Up => $"up {value}",
+                    _ => "down"
+                });
+                sb.Append('\n');
+            }
+        }
+
         return sb.ToString();
     }
 
+    /// <summary>
+    /// Adds the player to a list of watchers and returns result when the board is updated
+    /// </summary>
+    /// <param name="playerId">Player who is watching the board</param>
+    /// <returns>View of the board from the perspective of the player</returns>
     public async Task<string> Watch(string playerId)
     {
         var player = Players.GetOrAdd(playerId, id => new Player(id));
@@ -421,6 +462,9 @@ public sealed class Board
         return await watcher.Task;
     }
 
+    /// <summary>
+    /// Tell all the watchers the board is updated. Their wait task return their view
+    /// </summary>
     private async Task NotifyWatchers()
     {
         foreach (var kvp in Watchers.ToArray())
@@ -432,8 +476,16 @@ public sealed class Board
         Watchers.Clear();
     }
     
+    /// <summary>
+    /// Applies the transformation function <c>f</c> to every card on the board
+    /// </summary>
+    /// <param name="playerId">player who executes the action</param>
+    /// <param name="f">transformation function</param>
+    /// <returns>View of the board from the perspective of the mapper</returns>
     public async Task<string> Map(string playerId, Func<string, Task<string>> f)
     {
+        
+        // makes the snapshot of the board
         IReadOnlyList<(string Value, Card Card)> snapshot;
         await _lock.WaitAsync();
         try
@@ -445,53 +497,38 @@ public sealed class Board
         }
         finally { _lock.Release(); }
 
+        // combines the groups <value, cardList>
         var groups = snapshot
             .GroupBy(t => t.Value)
             .ToDictionary(g => g.Key, g => g.ToList());
 
-        var replacementMap = new Dictionary<string, string>(StringComparer.Ordinal);
-        var computeTasks = groups.Keys.Select(async oldVal =>
-        {
-            var newVal = await f(oldVal);
-            lock (replacementMap) replacementMap[oldVal] = newVal;
-        });
-        await Task.WhenAll(computeTasks);
-
         _boardModified = false;
 
-        var applyTasks = groups.Select(async kv =>
+        // calculate the value of f for each value
+        foreach (var kv in groups)
         {
             var (oldVal, tuples) = (kv.Key, kv.Value);
-            if (!replacementMap.TryGetValue(oldVal, out var newVal))
-                return;
 
+            var newVal = await f(oldVal);
+            
+            if (oldVal == newVal)
+                continue;
+            
+            SetModified();
+            
             var cards = tuples.Select(t => t.Card).ToList();
-            var ordered = cards.OrderBy(c => c.Row).ThenBy(c => c.Column).ToList();
-            var acquired = new List<SemaphoreSlim>();
 
+            // updates the values for that cards in the group
+            await _lock.WaitAsync();
             try
             {
-                foreach (var card in ordered)
-                {
-                    await card._lock.WaitAsync();
-                    acquired.Add(card._lock);
-                }
-
                 foreach (var card in cards)
                     card.Value = newVal;
+            } 
+            finally { _lock.Release(); }
+            
+        }
 
-                SetModified();
-            }
-            finally
-            {
-                foreach (var l in acquired)
-                    l.Release();
-            }
-        });
-
-        await Task.WhenAll(applyTasks);
-
-        // 4. Notify
         if (_boardModified)
             await NotifyWatchers();
 
@@ -525,8 +562,7 @@ public sealed class Board
         return Task.FromResult(_instance);
     }
 
-
-
+    
     public static async Task<Board> ParseFromFile(string relativeFilename)
     {
         var path = Path.Combine("Boards/data", relativeFilename);
