@@ -50,7 +50,7 @@ public sealed class Board
         _cards = cards;
         CheckRep();
     }
-
+    
     private void CheckRep()
     {
         Assert.Equal(Rows, _cards.GetLength(0));
@@ -260,10 +260,19 @@ public sealed class Board
                     player.LastFirstCard = player.FirstCard;
                     LoseControl(player.FirstCard, false);
                     player.FirstCard = null;
-                    SetModified();
+                    // SetModified();
                     return (false, _boardModified);
                 }
 
+                // if identified empty space
+                if (card.Status == CardStatus.None)
+                {
+                    player.LastFirstCard = player.FirstCard;
+                    LoseControl(player.FirstCard, false);
+                    player.FirstCard = null;
+                    return (false, false);
+                }
+                
                 // to avoid dedlocks, if card is controlled, lose control of both
                 if (card.Status == CardStatus.Up && card.ControlledBy != null)
                 {
@@ -489,10 +498,34 @@ public sealed class Board
         return await ToWatchString(playerId);
     }
 
-    public static void RandomEmojiBoard(int rows, int column)
+    public static Task<Board> RandomEmojiBoard(int rows, int cols)
     {
-        return;
+        List<string> emojis = new List<string>
+        {
+            "🍎", "🍌", "🍕", "🍔", "🍟", "🌲", "🌸", "🌞", "🌛", "⭐",
+            "⚡", "🔥", "💧", "🌊", "🍩", "🍪", "🎂", "🍫", "🍬", "🍭",
+            "🚗", "🚀", "✈️", "🚢", "🚲", "🛴", "🏠", "🏰", "🗿", "🎁",
+            "🎈", "🎨", "🎸", "🎹", "📱", "💻", "⌚", "📷", "🔑", "💡",
+            "🛒", "🛏️", "🛋️", "🪑", "🕯️", "📚", "📖", "🖼️", "🧭", "🔨"
+        };
+
+        var rand = new Random();
+        var cards = new Card[rows, cols];
+
+        for (int r = 0; r < rows; r++)
+        {
+            for (int c = 0; c < cols; c++)
+            {
+                string emoji = emojis[rand.Next(emojis.Count)];
+                cards[r, c] = new Card(emoji, r, c);
+            }
+        }
+
+        _instance = new Board(cards);
+        return Task.FromResult(_instance);
     }
+
+
 
     public static async Task<Board> ParseFromFile(string relativeFilename)
     {
