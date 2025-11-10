@@ -6,13 +6,13 @@ using Microsoft.Extensions.DependencyInjection;
 
 public static class Program
 {
-    public static async Task<WebApplication> StartServerAsync(string[] args)
+    public static async Task StartServerAsync(string[] args)
     {
         var serverPort = args.Length > 0 ? int.Parse(args[0]) : 8080;
         var boardFile = args.Length > 1 ? args[1] : "zoom.txt";
 
         // await Board.RandomEmojiBoard(10, 10);
-        await Board.ParseFromFile($"Boards/data/{boardFile}");
+        await Board.ParseFromFile($"{boardFile}");
         Console.WriteLine(Board.Instance);
 
         var builder = WebApplication.CreateBuilder(args);
@@ -39,16 +39,23 @@ public static class Program
 
         app.MapGet("replace/{playerId}/{fromCard}/{toCard}", async (string playerId, string fromCard, string toCard) =>
             await Command.Map(Board.Instance, playerId, async oldVal => oldVal == fromCard ? toCard : oldVal));
-
+        
         app.MapGet("/watch/{playerId}", async (string playerId) => await Command.Watch(Board.Instance, playerId));
-
-        return app;
+        
+        
+        app.MapGet("/", async () =>
+        {
+            var path = Path.Combine(AppContext.BaseDirectory, ".frontend", "index.html");
+            var html = await File.ReadAllTextAsync(path);
+            return Results.Content(html, "text/html");
+        });
+        
+        var url = "http://0.0.0.0:" + serverPort;
+        await app.RunAsync(url);
     }
 
     public static async Task Main(string[] args)
     {
-        var app = await StartServerAsync(args);
-        var url = "http://0.0.0.0:" + (args.Length > 0 ? int.Parse(args[0]) : 8080);
-        await app.RunAsync(url);
+        await StartServerAsync(args);
     }
 }

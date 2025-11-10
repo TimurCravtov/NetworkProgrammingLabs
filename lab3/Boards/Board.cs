@@ -529,7 +529,7 @@ public sealed class Board
 
     public static async Task<Board> ParseFromFile(string relativeFilename)
     {
-        var path = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", relativeFilename);
+        var path = Path.Combine("Boards/data", relativeFilename);
         var lines = await File.ReadAllLinesAsync(path);
 
         if (lines.Length == 0) throw new InvalidOperationException("Board file is empty.");

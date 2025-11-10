@@ -10,12 +10,18 @@
 
     <ItemGroup>
         <FrameworkReference Include="Microsoft.AspNetCore.App" />
+        <None Update="Boards\data\*.txt">
+            <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+        </None>
+ 
+        <None Include=".frontend\index.html">
+            <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+        </None>
+
+
     </ItemGroup>
 
-    <ItemGroup>
-      <None Include=".frontend\index.html" />
-    </ItemGroup>
-
+    
     <ItemGroup>
       <PackageReference Include="xunit" Version="2.9.3" />
     </ItemGroup>
