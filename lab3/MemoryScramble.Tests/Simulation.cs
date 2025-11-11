@@ -9,18 +9,19 @@ namespace MemoryScramble.Tests;
 
 public class Simulation
 {
-    private readonly ITestOutputHelper _output;
-    private const int BoardSize = 40;
-    private const int PlayerCount = 4;
-    private const int MovesPerPlayer = 10000;
-    private const double MinDelayMs = 0.1;
-    private const double MaxDelayMs = 2.0;
-
     private readonly string[] _players = 
     {
         "ryangosling", "tiranosaurus", "discriminant", "mongolianrap"
     };
+    
+    private readonly ITestOutputHelper _output;
+    private const int BoardSize = 16;
+    private const int PlayerCount = 4;
+    private const int MovesPerPlayer = 100_000;
+    private const double MinDelayMs = 0.1;
+    private const double MaxDelayMs = 2.0;
 
+    
     private readonly Random _rand = new();
 
     public Simulation(ITestOutputHelper testOutputHelper)
@@ -78,12 +79,8 @@ public class Simulation
                 await RandomTimeout();
 
                 // Second flip
-                bool secondSuccess = await board.Flip(r2, c2, playerId);
-                if (secondSuccess) successfulFlips++; else failedFlips++;
-
-                // Optional: Watch board state (uncomment to debug)
-                // string view = await Command.Watch(board, playerId);
-                // _output.WriteLine($"[{playerId}] Move {move}: ({r1},{c1}) → ({r2},{c2})\n{view}");
+                await Command.Flip(board, playerId, r2, c2);
+                
             }
             catch (Exception ex)
             {

@@ -35,7 +35,6 @@ public sealed class Player
 public sealed class Board
 {
     private static Board? _instance;
-    public static Board Instance => _instance ?? throw new InvalidOperationException("Board not initialized. Call ParseFromFile first.");
 
     private readonly Card[,] _cards;
     public int Rows { get; }
@@ -216,7 +215,6 @@ public sealed class Board
     {
         _boardModified = false;
         var player = Players.GetOrAdd(playerId, id => new Player(id));
-        if (row < 0 || row >= Rows || col < 0 || col >= Cols) return (false, _boardModified);
         Card card = _cards[row, col];
 
         await _lock.WaitAsync();
@@ -405,7 +403,7 @@ public sealed class Board
     /// <returns></returns>
     public async Task<string> ToWatchString(string playerId)
     {
-        var viewSnapshot = new (CardStatus Status, string Value, string ControlledBy)[Rows, Cols];
+        var viewSnapshot = new (CardStatus Status, string Value, string? ControlledBy)[Rows, Cols];
 
         await _lock.WaitAsync();
         try
@@ -467,13 +465,26 @@ public sealed class Board
     /// </summary>
     private async Task NotifyWatchers()
     {
-        foreach (var kvp in Watchers.ToArray())
+        var keys = Watchers.Keys.ToList();
+    
+        var tasks = keys.Select(async playerId =>
         {
-            kvp.Value.TrySetResult(await ToWatchString(kvp.Key));
-        }
+            if (Watchers.TryRemove(playerId, out var tcs))
+            {
+                try
+                {
+                    string view = await ToWatchString(playerId);
+                    tcs.TrySetResult(view);
+                }
+                catch (Exception ex)
+                {
+                    tcs.TrySetException(ex);
+                }
+            }
+        });
 
+        await Task.WhenAll(tasks);
         _boardModified = false;
-        Watchers.Clear();
     }
     
     /// <summary>
@@ -534,7 +545,7 @@ public sealed class Board
 
         return await ToWatchString(playerId);
     }
-
+    
     public static Task<Board> RandomEmojiBoard(int rows, int cols)
     {
         List<string> emojis = new List<string>
