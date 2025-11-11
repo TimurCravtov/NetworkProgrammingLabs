@@ -15,10 +15,10 @@ public class Simulation
     };
     
     private readonly ITestOutputHelper _output;
-    private const int BoardSize = 16;
+    private const int BoardSize = 20;
     private const int PlayerCount = 4;
     private const int MovesPerPlayer = 100_000;
-    private const double MinDelayMs = 0.1;
+    private const double MinDelayMs = 1.0;
     private const double MaxDelayMs = 2.0;
 
     

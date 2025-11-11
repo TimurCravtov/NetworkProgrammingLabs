@@ -8,20 +8,39 @@ public enum CardStatus { Down, Up, None }
 
 public sealed class Card(string value, int row, int column)
 {
+    
+    // The actual value of the card
     public string Value { get; set; } = value;
+    
+    // the row of the card
     public int Row => row;
+    
+    // the column of the card
     public int Column => column;
+    
+    // up, down, none (removed) => default down
     public CardStatus Status { get; set; } = CardStatus.Down;
+    
+    // the id of the player who controls the card
     public string? ControlledBy { get; set; } = null;
+    
+    // the lock to block access to the card
     public SemaphoreSlim _lock { get; } = new(1, 1);
+    
+    // the queue of the players who wait to get control of the card
     public Queue<TaskCompletionSource<bool>> WaitQueue { get; } = new();
 }
 
 public sealed class Player
 {
+    // id of the player
     public string Id { get; }
+    
+    // the first and second card controlled by the player
     public Card? FirstCard { get; set; }
     public Card? SecondCard { get; set; }
+    
+    // the cards from previous round
     public Card? LastFirstCard { get; set; }
     public Card? LastSecondCard { get; set; }
 
@@ -34,14 +53,14 @@ public sealed class Player
 /// </summary>
 public sealed class Board
 {
-    private static Board? _instance;
-
     private readonly Card[,] _cards;
-    public int Rows { get; }
-    public int Cols { get; }
+    private int Rows { get; }
+    private int Cols { get; }
 
-    public ConcurrentDictionary<string, Player> Players { get; } = new();
-    public ConcurrentDictionary<string, TaskCompletionSource<string>> Watchers = new();
+    // dictionary which maps player id to the player instance
+    private ConcurrentDictionary<string, Player> Players { get; } = new();
+    
+    private ConcurrentDictionary<string, TaskCompletionSource<string>> _watchers = new();
 
     private readonly SemaphoreSlim _lock = new(1, 1); // Board-wide lock
     private bool _boardModified;
@@ -456,7 +475,7 @@ public sealed class Board
     {
         var player = Players.GetOrAdd(playerId, id => new Player(id));
         var watcher = new TaskCompletionSource<string>();
-        Watchers[playerId] = watcher;
+        _watchers[playerId] = watcher;
         return await watcher.Task;
     }
 
@@ -465,11 +484,11 @@ public sealed class Board
     /// </summary>
     private async Task NotifyWatchers()
     {
-        var keys = Watchers.Keys.ToList();
+        var keys = _watchers.Keys.ToList();
     
         var tasks = keys.Select(async playerId =>
         {
-            if (Watchers.TryRemove(playerId, out var tcs))
+            if (_watchers.TryRemove(playerId, out var tcs))
             {
                 try
                 {
@@ -569,8 +588,7 @@ public sealed class Board
             }
         }
 
-        _instance = new Board(cards);
-        return Task.FromResult(_instance);
+        return Task.FromResult(new Board(cards));
     }
 
     
@@ -600,8 +618,7 @@ public sealed class Board
                 throw new InvalidOperationException($"Empty card at [{r},{c}].");
             cards[r, c] = new Card(value, r, c);
         }
-
-        _instance = new Board(cards);
-        return _instance;
+        
+        return new Board(cards);;
     }
 }
