@@ -1,0 +1,69 @@
+services:
+  leader:
+    build:
+      context: .
+      dockerfile: LeaderApp/Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      - FOLLOWERS=http://follower-1:8080,http://follower-2:8080,http://follower-3:8080,http://follower-4:8080,http://follower-5:8080
+      - WRITE_QUORUM=${WRITE_QUORUM:-1}
+      - PORT=8080
+      - MIN_DELAY_MS=0
+      - MAX_DELAY_MS=1000
+    restart: unless-stopped
+
+  follower-1:
+    build:
+      context: .
+      dockerfile: FollowerApp/Dockerfile
+    ports:
+      - "8081:8080"
+    environment:
+      - LEADER_URL=http://leader:8080
+      - PORT=8080
+    restart: unless-stopped
+
+  follower-2:
+    build:
+      context: .
+      dockerfile: FollowerApp/Dockerfile
+    ports:
+      - "8082:8080"
+    environment:
+      - LEADER_URL=http://leader:8080
+      - PORT=8080
+    restart: unless-stopped
+
+  follower-3:
+    build:
+      context: .
+      dockerfile: FollowerApp/Dockerfile
+    ports:
+      - "8083:8080"
+    environment:
+      - LEADER_URL=http://leader:8080
+      - PORT=8080
+    restart: unless-stopped
+
+  follower-4:
+    build:
+      context: .
+      dockerfile: FollowerApp/Dockerfile
+    ports:
+      - "8084:8080"
+    environment:
+      - LEADER_URL=http://leader:8080
+      - PORT=8080
+    restart: unless-stopped
+
+  follower-5:
+    build:
+      context: .
+      dockerfile: FollowerApp/Dockerfile
+    ports:
+      - "8085:8080"
+    environment:
+      - LEADER_URL=http://leader:8080
+      - PORT=8080
+    restart: unless-stopped

@@ -13,15 +13,13 @@ public class Follower
     private readonly int _port;
     private readonly string _url;
     private readonly string _leaderUrl;
-    private readonly ILogger<Follower> _logger;
 
-    public Follower(IKeyValueStorage storage, int port, string leaderUrl, ILogger<Follower>? logger = null)
+    public Follower(IKeyValueStorage storage, int port, string leaderUrl)
     {
         _port = port;
         _storage = storage;
         _url = $"http://0.0.0.0:{port}/";
         _leaderUrl = leaderUrl;
-        _logger = logger ?? LoggerFactory.Create(builder => builder.AddConsole()).CreateLogger<Follower>();
     }
 
     private WebApplication RegisterReplicationRoute(WebApplication app)
@@ -48,7 +46,7 @@ public class Follower
             }
 
             _storage.Set(request.Key, request.Value);
-            _logger.LogInformation("Value set successfully. Key: {Key}, Value: {Value}", request.Key, request.Value);
+            Log.Info($"Value set successfully. Key: {request.Key}, Value: {request.Value}");
 
             return Results.Ok();
         });
@@ -56,28 +54,16 @@ public class Follower
         return app;
     }
 
-    public Task RunAsync()
-    {
-        var builder = WebApplication.CreateBuilder();
-        var app = builder.Build();
-
-        app = CommonRequestHandler.RegisterGetRequest(app, _storage);
-        app = RegisterReplicationRoute(app);
-
-        _logger.LogInformation("Follower running on {Url}", _url);
-
-        return app.RunAsync(_url);
-    }
 
     public void Run()
     {
         var builder = WebApplication.CreateBuilder();
         var app = builder.Build();
-
+        app = CommonRequestHandler.RegisterGetAllRequest(app, _storage);
         app = CommonRequestHandler.RegisterGetRequest(app, _storage);
         app = RegisterReplicationRoute(app);
 
-        _logger.LogInformation("Follower running on {Url}", _url);
+        Log.Info($"Follower running on {_url}");
 
         app.Run(_url);
     }

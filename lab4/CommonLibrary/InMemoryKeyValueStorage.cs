@@ -16,6 +16,8 @@ public class InMemoryKeyValueStorage : IKeyValueStorage
         _storage[key] = value;
     }
 
+    public Dictionary<string, string?> GetAll() => _storage.ToDictionary(x => x.Key, x => x.Value);
+    
     public override int GetHashCode()
     {
         return _storage.GetHashCode();

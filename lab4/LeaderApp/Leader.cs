@@ -12,12 +12,18 @@ public class Leader
     private readonly HashSet<string> _followersUrl;
     private readonly int _writeQuorum;
     private readonly string _url;
-    public Leader(IKeyValueStorage storage, HashSet<string> followersUrl, int writeQuorum, int port = 8080)
+    private readonly (float, float) delayMs;
+    private readonly HttpClient _httpClient;
+    
+    public Leader(IKeyValueStorage storage, HashSet<string> followersUrl, int writeQuorum, int port = 8080, float minDelayMs = 0.1f, float maxDelayMs = 1f)
     {
         _followersUrl = followersUrl;
         _storage = storage;
         _writeQuorum = writeQuorum;
         _url = $"http://0.0.0.0:{port}/";
+        delayMs.Item1 = minDelayMs;
+        delayMs.Item2 = maxDelayMs;
+        _httpClient = new HttpClient();
     }
 
     public Task RunAsync()
@@ -38,11 +44,17 @@ public class Leader
         _ = SendToFollowers(key, value, _writeQuorum, () =>
         {
             quorumReached.TrySetResult(true);
-        });
-        await quorumReached.Task;
+        },
+            onQuorumImpossibleToReach: () => quorumReached.TrySetResult(false), delayMs);
         
-        _storage.Set(key, value);
-        return true;
+        bool reached = await quorumReached.Task;
+
+        if (reached)
+        {
+            _storage.Set(key, value);
+        }
+        
+        return reached;
         
     }
     
@@ -53,34 +65,37 @@ public class Leader
 
         app = RegisterLeaderEndpoints(app);
         app = CommonRequestHandler.RegisterGetRequest(app, _storage);
-
-        var url = "http://0.0.0.0:8080/";
-
+        app = CommonRequestHandler.RegisterGetAllRequest(app, _storage);
+        
         if (useAsync)
         {
-            _ = app.RunAsync(url);
+            _ = app.RunAsync(_url);
         }
         else
         {
-            app.Run(url);
+            app.Run(_url);
         }
     }
 
 
-    private async Task SendToFollowers(string key, string value, int writeQuorum, Action onQuorumReached)
+    private async Task SendToFollowers(string key, string value, int writeQuorum, Action onQuorumReached, Action onQuorumImpossibleToReach, (float, float) delayMs = default)
     {
-        using var client = new HttpClient();
-
         int successCount = 0;
         var lockObj = new object();
 
         if (writeQuorum == 0) onQuorumReached();
-        
+
+        (int, int) delayMicroseconds = ((int) Math.Round(delayMs.Item1 * 1000), (int) Math.Round(delayMs.Item2 * 1000));
+            
         var tasks = _followersUrl.Select(async url =>
         {
             try
             {
-                var response = await client.PostAsJsonAsync($"{url}/replicate/", new PutRequest(key, value));
+                int randomDelayMicros = Random.Shared.Next(delayMicroseconds.Item1, delayMicroseconds.Item2 + 1000); 
+                
+                await Task.Delay(TimeSpan.FromMicroseconds(randomDelayMicros));
+                
+                var response = await _httpClient.PostAsJsonAsync($"{url}/replicate/", new PutRequest(key, value));
 
                 if (response.IsSuccessStatusCode)
                 {
@@ -103,6 +118,7 @@ public class Leader
         }).ToList();
 
         await Task.WhenAll(tasks);
+        if (successCount < writeQuorum) onQuorumImpossibleToReach();
     }
     
     public void AddFollower(string url)
@@ -114,8 +130,9 @@ public class Leader
     {
         app.MapPost("/put", async (PutRequest body) =>
         {
-            await HandlePutRequest(body.Key, body.Value);
-            return Results.Ok();
+            Log.Info("Received put");
+            var success = await HandlePutRequest(body.Key, body.Value);
+            return success ? Results.Ok() : Results.BadRequest();
         });
 
         return app;
