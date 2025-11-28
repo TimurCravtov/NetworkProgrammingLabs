@@ -26,35 +26,32 @@ def write_task(key, value):
         # print(f"Write error: {e}")
         return False, time.time() - start
 
-def check_consistency(keys):
+def check_consistency():
     mismatches = 0
     print("Verifying consistency...")
-    
-    # Get Leader Data
-    leader_data = {}
-    for key in keys:
-        try:
-            resp = requests.get(f"{LEADER_URL}/get/{key}", timeout=2)
-            if resp.status_code == 200:
-                leader_data[key] = resp.json()
-            else:
-                leader_data[key] = None
-        except:
-            leader_data[key] = None
+
+    # Get all data from Leader
+    try:
+        resp = requests.get(f"{LEADER_URL}/getall", timeout=2)
+        leader_data = resp.json() if resp.status_code == 200 else {}
+    except:
+        leader_data = {}
 
     # Check Followers
     for f_idx, f_url in enumerate(FOLLOWER_URLS):
-        for key in keys:
-            try:
-                resp = requests.get(f"{f_url}/get/{key}", timeout=2)
-                follower_val = resp.json() if resp.status_code == 200 else None
-            except:
-                follower_val = None
-            
-            if leader_data.get(key) != follower_val:
+        try:
+            resp = requests.get(f"{f_url}/getall", timeout=2)
+            follower_data = resp.json() if resp.status_code == 200 else {}
+        except:
+            follower_data = {}
+
+        # Compare key by key
+        for key, leader_val in leader_data.items():
+            follower_val = follower_data.get(key)
+            if leader_val != follower_val:
                 mismatches += 1
-                # print(f"Mismatch Key={key}: Leader={leader_data.get(key)} Follower{f_idx+1}={follower_val}")
-    
+                # print(f"Mismatch Key={key}: Leader={leader_val} Follower{f_idx+1}={follower_val}")
+
     return mismatches
 
 def check_consistency_getall():
@@ -181,17 +178,6 @@ def run_experiment():
     plt.savefig(output_file)
     print(f"\nPlot saved to {output_file}")
     
-    print("\nExplanation:")
-    print("1. Latency vs Quorum: As the write quorum increases, the leader must wait for acknowledgments from more followers.")
-    print("   This introduces additional network latency and processing time (waiting for the slowest of the N required followers).")
-    print("   Therefore, we expect the average latency to increase with the quorum size.")
-    print("2. Consistency: In this implementation, followers update their state immediately upon receiving a request.")
-    print("   The leader updates its state only after the quorum is reached.")
-    print("   Since we are checking consistency after all writes have completed and the system is quiescent,")
-    print("   we expect the data to be consistent across all nodes, assuming no permanent failures occurred.")
-    print("   If a write failed (quorum not reached), the leader wouldn't have updated, but some followers might have.")
-    print("   This could lead to inconsistency if we checked failed writes, but for successful writes, all should match.")
-
 if __name__ == "__main__":
     run_experiment()
 

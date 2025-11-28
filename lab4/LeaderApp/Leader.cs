@@ -25,17 +25,6 @@ public class Leader
         delayMs.Item2 = maxDelayMs;
         _httpClient = new HttpClient();
     }
-
-    public Task RunAsync()
-    {
-        var builder = WebApplication.CreateBuilder();
-        var app = builder.Build();
-
-        app = RegisterLeaderEndpoints(app);
-        app = CommonRequestHandler.RegisterGetRequest(app, _storage);
-        
-        return app.RunAsync(_url);
-    }
     
     private async Task<bool> HandlePutRequest(string key, string value)
     {
@@ -130,7 +119,7 @@ public class Leader
     {
         app.MapPost("/put", async (PutRequest body) =>
         {
-            Log.Info("Received put");
+            Log.Info($"Received put {body.Key} :: {body.Value}");
             var success = await HandlePutRequest(body.Key, body.Value);
             return success ? Results.Ok() : Results.BadRequest();
         });
