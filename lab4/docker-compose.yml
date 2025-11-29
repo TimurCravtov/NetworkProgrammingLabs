@@ -10,7 +10,7 @@ services:
       - WRITE_QUORUM=${WRITE_QUORUM:-1}
       - PORT=8080
       - MIN_DELAY_MS=0
-      - MAX_DELAY_MS=1000
+      - MAX_DELAY_MS=200
     restart: unless-stopped
 
   follower-1:
