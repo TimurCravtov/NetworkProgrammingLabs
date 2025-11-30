@@ -49,7 +49,7 @@ Now, using `client/client.py` the integration test was performed.
 
 Graph below represents the dependence of the latency with respect to write quorum given. This graph corresponds the expectations.
 
-<img src="client/latency_plot.png" width="80%">
+<img src="client/latency_statistics_plot_full.png" width="80%">
 
 The sql formula of this is the following:
 

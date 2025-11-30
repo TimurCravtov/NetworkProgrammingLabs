@@ -4,12 +4,13 @@ import matplotlib.pyplot as plt
 import subprocess
 import os
 import random
+import numpy as np  # Used for percentile calculation
 from concurrent.futures import ThreadPoolExecutor
 
 # Configuration
 LEADER_URL = "http://localhost:8080"
 FOLLOWER_URLS = [f"http://localhost:{8081+i}" for i in range(5)]
-NUM_WRITES = 1000
+NUM_WRITES = 200
 NUM_KEYS = 10
 CONCURRENCY = 20  # >10 threads
 
@@ -88,21 +89,8 @@ def check_consistency_getall():
             continue
             
         # Compare dictionaries
-        # We only care if keys present in leader match in follower. 
-        # Or should we check exact match? 
-        # Given the experiment, exact match is expected for the keys we wrote.
-        # But let's just check if leader_data == follower_data
-        
         if leader_data != follower_data:
             mismatches += 1
-            # Find differences for logging (optional)
-            # diff_keys = set(leader_data.keys()) ^ set(follower_data.keys())
-            # if diff_keys:
-            #     print(f"Key set mismatch with Follower {f_idx+1}: {diff_keys}")
-            # else:
-            #     for k in leader_data:
-            #         if leader_data[k] != follower_data.get(k):
-            #             print(f"Value mismatch for key {k}: Leader={leader_data[k]}, Follower={follower_data.get(k)}")
 
     return mismatches
 
@@ -111,7 +99,7 @@ def run_experiment():
     project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
     
     quorums = [1, 2, 3, 4, 5]
-    avg_latencies = []
+    results = [] # Stores mean, p50, p95, and p99 for each quorum
     
     for q in quorums:
         print(f"\n=== Testing Write Quorum: {q} ===")
@@ -152,11 +140,24 @@ def run_experiment():
                     print(f"Completed {completed}/{NUM_WRITES} requests")
         
         if latencies:
-            avg = sum(latencies) / len(latencies)
-            avg_latencies.append(avg)
-            print(f"Average Latency: {avg:.4f}s")
+            # Calculate Mean, Median (P50), P95, P99
+            latencies_array = np.array(latencies)
+            mean_lat = np.mean(latencies_array)
+            p50_lat = np.percentile(latencies_array, 50) # Median
+            p95_lat = np.percentile(latencies_array, 95)
+            p99_lat = np.percentile(latencies_array, 99)
+            
+            results.append({
+                'quorum': q,
+                'mean': mean_lat,
+                'p50': p50_lat,
+                'p95': p95_lat,
+                'p99': p99_lat
+            })
+            
+            print(f"Mean: {mean_lat:.4f}s, Median (P50): {p50_lat:.4f}s, P95: {p95_lat:.4f}s, P99: {p99_lat:.4f}s")
         else:
-            avg_latencies.append(0)
+            results.append({'quorum': q, 'mean': 0, 'p50': 0, 'p95': 0, 'p99': 0})
             print("All writes failed.")
 
         mismatches = check_consistency_getall()
@@ -168,16 +169,31 @@ def run_experiment():
             print("Result: Inconsistency observed.")
 
     # Plotting
+    
+    # Prepare data for plotting
+    plot_quorums = [r['quorum'] for r in results]
+    mean_latencies = [r['mean'] for r in results]
+    p50_latencies = [r['p50'] for r in results]
+    p95_latencies = [r['p95'] for r in results]
+    p99_latencies = [r['p99'] for r in results]
+    
     plt.figure(figsize=(10, 6))
-    plt.plot(quorums, avg_latencies, marker='o', linestyle='-', color='b')
-    plt.title('Write Quorum vs Average Write Latency')
+    
+    # Plot all four metrics
+    plt.plot(plot_quorums, mean_latencies, marker='o', linestyle='-', color='b', label='Mean Latency (Average)')
+    plt.plot(plot_quorums, p50_latencies, marker='d', linestyle='-', color='y', label='Median Latency (P50)') # Added median
+    plt.plot(plot_quorums, p95_latencies, marker='s', linestyle='--', color='r', label='P95 Latency')
+    plt.plot(plot_quorums, p99_latencies, marker='^', linestyle=':', color='g', label='P99 Latency')
+    
+    plt.title('Write Quorum vs Latency Statistics')
     plt.xlabel('Write Quorum (Number of Followers)')
-    plt.ylabel('Average Latency (seconds)')
+    plt.ylabel('Latency (seconds)')
+    plt.legend() 
     plt.grid(True)
-    output_file = os.path.join(os.path.dirname(__file__), 'latency_plot.png')
+    
+    output_file = os.path.join(os.path.dirname(__file__), 'latency_statistics_plot_full.png')
     plt.savefig(output_file)
     print(f"\nPlot saved to {output_file}")
     
 if __name__ == "__main__":
     run_experiment()
-
