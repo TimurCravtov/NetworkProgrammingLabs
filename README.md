@@ -9,8 +9,16 @@ All the laboratory works are implemented in `Python`. Inside each laboratory wor
 - Code: [lab1/](lab1/)
 - Report: [Laboratory 1 Report](lab1/README.md)
 
-### Laboratory 1: *Concurrent* HTTP file server
+### Laboratory 2: *Concurrent* HTTP file server
 
 - Code: [lab2/](lab2/)
 - Report: [Laboratory 2 Report](lab2/README.md)
 
+### Laboratory 3: Memory scramble
+
+- Code: [lab3/](lab3/)
+
+### Laboratory 4: Leader-follower key-value storage
+
+- Code: [lab4/](lab4/)
+- Report: [Laboratory 4 Report](lab4/README.md)
